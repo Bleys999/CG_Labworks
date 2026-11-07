@@ -38,6 +38,9 @@
     <Filter Include="Main\Objects\Chandelier">
       <UniqueIdentifier>{a1b2c3d4-0009-0000-0000-000000000001}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Main\Objects\Terrain">
+      <UniqueIdentifier>{a1b2c3d4-0010-0000-0000-000000000001}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Main\Objects\Tess">
       <UniqueIdentifier>{a1b2c3d4-0008-0000-0000-000000000001}</UniqueIdentifier>
     </Filter>
@@ -54,6 +57,9 @@
     </ClCompile>
     <ClCompile Include="Objects\Axe\AxeObject.cpp">
       <Filter>Main\Objects\Box</Filter>
+    </ClCompile>
+    <ClCompile Include="Objects\Terrain\TerrainObject.cpp">
+      <Filter>Main\Objects\Terrain</Filter>
     </ClCompile>
     <ClCompile Include="Objects\Bulb\BulbObject.cpp">
       <Filter>Main\Objects\Box</Filter>
@@ -125,6 +131,9 @@
     </ClInclude>
     <ClInclude Include="Objects\Axe\AxeObject.h">
       <Filter>Main\Objects\Box</Filter>
+    </ClInclude>
+    <ClInclude Include="Objects\Terrain\TerrainObject.h">
+      <Filter>Main\Objects\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="Objects\Chandelier\ChandelierObject.h">
       <Filter>Main\Objects\Chandelier</Filter>
@@ -234,6 +243,9 @@
       <Filter>Shader Files</Filter>
     </None>
     <None Include="Shaders\axe.hlsl">
+      <Filter>Shader Files</Filter>
+    </None>
+    <None Include="Shaders\terrain.hlsl">
       <Filter>Shader Files</Filter>
     </None>
   </ItemGroup>

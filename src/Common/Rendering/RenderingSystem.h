@@ -86,6 +86,8 @@ public:
     void EndShadowPass(ID3D12GraphicsCommandList* cmdList);
     DirectX::XMMATRIX GetCascadeView(UINT cascadeIndex) const;
     DirectX::XMMATRIX GetCascadeProj(UINT cascadeIndex) const;
+    UINT GetCurrentShadowCascade() const { return mCurrentShadowCascade; }
+    D3D12_GPU_VIRTUAL_ADDRESS GetShadowPassCBAddress(UINT cascadeIndex) const;
 
     void SetShadowDebugMode(UINT mode);
     UINT GetShadowDebugMode() const { return mLightingCpu.DebugMode; }
@@ -192,6 +194,7 @@ private:
     DirectX::XMFLOAT4X4 mCascadeView[4] = {};
     DirectX::XMFLOAT4X4 mCascadeProj[4] = {};
     std::unique_ptr<UploadBuffer<ShadowPassConstants>> mShadowPassCB;
+    mutable UINT mCurrentShadowCascade = 0;
     bool mShadowShaderRead = false;
     ID3D12Device* mDevice = nullptr;
 

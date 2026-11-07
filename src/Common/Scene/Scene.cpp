@@ -4,6 +4,7 @@
 #include "../../Main/Objects/Axe/AxeObject.h"
 #include "../../Main/Objects/Sponza/SponzaObject.h"
 #include "../../Main/Objects/Chandelier/ChandelierObject.h"
+#include "../../Main/Objects/Terrain/TerrainObject.h"
 #include "../Assets/TextureManager.h"
 #include "../Core/Config.h"
 #include <algorithm>
@@ -21,26 +22,46 @@ bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
 {
     mTextureManager = textureManager;
 
-    auto sponza = std::make_unique<SponzaObject>("Sponza");
-    sponza->SetPosition(0.0f, 0.0f, 0.0f);
-    sponza->SetRotation(0.0f, 0.0f, 0.0f);
-    sponza->SetScale(1.0f, 1.0f, 1.0f);
-    sponza->SetCullable(false);
-    sponza->SetRenderingSystem(rendering);
-    if (!sponza->Initialize(device, cmdList, textureManager))
-        return false;
-    AddObject(std::move(sponza));
+    if (!Config::TerrainOnly)
+    {
+        auto sponza = std::make_unique<SponzaObject>("Sponza");
+        sponza->SetPosition(0.0f, 0.0f, 0.0f);
+        sponza->SetRotation(0.0f, 0.0f, 0.0f);
+        sponza->SetScale(1.0f, 1.0f, 1.0f);
+        sponza->SetCullable(false);
+        sponza->SetRenderingSystem(rendering);
+        if (!sponza->Initialize(device, cmdList, textureManager))
+            return false;
+        AddObject(std::move(sponza));
 
-    if (!SpawnScatteredBoxes(device, cmdList, textureManager))
-        return false;
-    if (!SpawnBulb(device, cmdList, textureManager))
-        return false;
-    if (!SpawnAxe(device, cmdList, textureManager, rendering))
-        return false;
-    if (!SpawnChandeliers(device, cmdList, textureManager))
+        if (!SpawnScatteredBoxes(device, cmdList, textureManager))
+            return false;
+        if (!SpawnBulb(device, cmdList, textureManager))
+            return false;
+        if (!SpawnAxe(device, cmdList, textureManager, rendering))
+            return false;
+        if (!SpawnChandeliers(device, cmdList, textureManager))
+            return false;
+    }
+    if (!SpawnTerrain(device, cmdList, textureManager, rendering))
         return false;
 
     BuildOctree();
+    return true;
+}
+
+bool Scene::SpawnTerrain(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering)
+{
+    auto terrain = std::make_unique<TerrainObject>("Terrain");
+    terrain->SetRenderingSystem(rendering);
+    terrain->SetPosition(0.0f, 0.0f, 0.0f);
+    terrain->SetCullable(false);
+    if (GameObject* sponza = GetObject("Sponza"))
+        terrain->SetFlattenRegion(sponza->GetWorldBounds());
+    if (!terrain->Initialize(device, cmdList, textureManager))
+        return false;
+    mTerrain = terrain.get();
+    AddObject(std::move(terrain));
     return true;
 }
 
@@ -112,8 +133,7 @@ bool Scene::SpawnAxe(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, T
 {
     auto axe = std::make_unique<AxeObject>("Axe");
     axe->SetRenderingSystem(rendering);
-    axe->SetPosition(12.5f, 10.0f, 12.5f);
-    axe->SetRotation(XM_PIDIV2, 0.0f, 0.0f);
+    axe->SetPosition(12.5f, 6.0f, 12.5f);
     axe->SetScale(4.0f, 4.0f, 4.0f);
     axe->SetCullable(true);
     if (!axe->Initialize(device, cmdList, textureManager))
@@ -244,6 +264,9 @@ void Scene::Update(const GameTimer& gt, const Camera& camera)
         gameObject->Update(gt);
         gameObject->UpdateConstantBuffer(view, proj);
     }
+
+    if (mTerrain)
+        mTerrain->SelectNodes(camera.GetPosition3f(), camera.GetWorldFrustum());
 }
 
 bool Scene::ShouldDrawObject(GameObject* object, const BoundingFrustum& frustum) const

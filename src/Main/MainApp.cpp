@@ -6,6 +6,7 @@
 #include "Objects/Chandelier/ChandelierObject.h"
 #include "Objects/Bulb/BulbObject.h"
 #include "Objects/Sponza/SponzaObject.h"
+#include "Objects/Terrain/TerrainObject.h"
 #include "../Common/Core/Input.h"
 #include "../Common/Assets/TextureManager.h"
 #include "../Common/Core/Config.h"
@@ -47,6 +48,7 @@ private:
     bool mPrevF9 = false;
     bool mPrevF10 = false;
     bool mPrevR = false;
+    bool mPrevT = false;
 };
 
 MainApp::MainApp(HINSTANCE hInstance) : D3DApp(hInstance) {}
@@ -76,6 +78,11 @@ bool MainApp::Initialize()
         auto* sponzaObject = static_cast<SponzaObject*>(sponza);
         if (Config::TessellationBaked && sponzaObject->GetBakedTriangleCount() == 0)
             mRendering.SetTessBaked(false);
+    }
+    else if (TerrainObject* terrain = mScene.GetTerrain())
+    {
+        const XMFLOAT3 p = mCamera.GetPosition3f();
+        mCamera.SetPosition(p.x, terrain->GetHeightAt(p.x, p.z) + 40.0f, p.z);
     }
 
     ThrowIfFailed(mCommandList->Close());
@@ -109,6 +116,7 @@ void MainApp::Update(const GameTimer& gt)
     const bool f9 = mInput.IsKeyDown(VK_F9);
     const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N') || mInput.IsKeyDown('n');
     const bool r = mInput.IsKeyDown('R') || mInput.IsKeyDown('r');
+    const bool t = mInput.IsKeyDown('T') || mInput.IsKeyDown('t');
     if (f3 && !mPrevF3)
     {
         mScene.ToggleFrustumCulling();
@@ -154,6 +162,12 @@ void MainApp::Update(const GameTimer& gt)
         mRendering.ToggleFisheye();
         RefreshWindowCaption();
     }
+    if (t && !mPrevT)
+    {
+        if (TerrainObject* terrain = mScene.GetTerrain())
+            terrain->CycleLodDebug();
+        RefreshWindowCaption();
+    }
     mPrevF3 = f3;
     mPrevF4 = f4;
     mPrevF5 = f5;
@@ -163,6 +177,7 @@ void MainApp::Update(const GameTimer& gt)
     mPrevF9 = f9;
     mPrevF10 = f10;
     mPrevR = r;
+    mPrevT = t;
 
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
@@ -278,6 +293,15 @@ void MainApp::RefreshWindowCaption()
     const UINT viz = mRendering.GetShadowDebugMode();
     const UINT shadowOn = (viz == 1) ? 0 : 1;
     std::wstring ndfName = mRendering.GetNdfMode() == 0 ? L"GGX" : L"Off";
+    std::wstring terrainInfo;
+    if (TerrainObject* terrain = mScene.GetTerrain())
+    {
+        const wchar_t* modes[] = { L"off", L"color", L"wire" };
+        terrainInfo = L"  T terrain lod:" + std::wstring(modes[terrain->GetLodDebug() % 3]) +
+            L" nodes:" + std::to_wstring(terrain->GetDrawnNodeCount()) +
+            L" culled:" + std::to_wstring(terrain->GetCulledNodeCount()) +
+            L" depth:" + std::to_wstring(terrain->GetMaxLevelDrawn());
+    }
     mMainWndCaption = L"NDF Mode: " + ndfName +
         L" | Shadow: " + std::to_wstring(shadowOn) +
         L"  F10  F3 frustum:" + frustum +
@@ -289,7 +313,8 @@ void MainApp::RefreshWindowCaption()
         L"  lod1>" + std::to_wstring((int)Config::BillboardLodDistance) +
         L"  drawn:" + std::to_wstring(mScene.GetDrawnCount()) +
         L"/" + std::to_wstring(mScene.GetObjectCount()) +
-        L"  boxes:" + std::to_wstring(mScene.GetCullableCount());
+        L"  boxes:" + std::to_wstring(mScene.GetCullableCount()) +
+        terrainInfo;
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance, PSTR cmdLine, int showCmd)

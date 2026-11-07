@@ -251,9 +251,14 @@ void RenderingSystem::SetShadowCascadeTarget(ID3D12GraphicsCommandList* cmdList,
     cmdList->OMSetRenderTargets(0, nullptr, FALSE, &mShadowDsv[cascadeIndex]);
     cmdList->ClearDepthStencilView(mShadowDsv[cascadeIndex], D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
+    mCurrentShadowCascade = cascadeIndex;
+    cmdList->SetGraphicsRootConstantBufferView(1, GetShadowPassCBAddress(cascadeIndex));
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS RenderingSystem::GetShadowPassCBAddress(UINT cascadeIndex) const
+{
     const UINT cbSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ShadowPassConstants));
-    cmdList->SetGraphicsRootConstantBufferView(
-        1, mShadowPassCB->Resource()->GetGPUVirtualAddress() + cascadeIndex * cbSize);
+    return mShadowPassCB->Resource()->GetGPUVirtualAddress() + (UINT64)cascadeIndex * cbSize;
 }
 
 XMMATRIX RenderingSystem::GetCascadeView(UINT cascadeIndex) const

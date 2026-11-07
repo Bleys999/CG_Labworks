@@ -167,6 +167,7 @@
     <ClCompile Include="MainApp.cpp" />
     <ClCompile Include="Objects\Box\BoxObject.cpp" />
     <ClCompile Include="Objects\Axe\AxeObject.cpp" />
+    <ClCompile Include="Objects\Terrain\TerrainObject.cpp" />
     <ClCompile Include="Objects\Bulb\BulbObject.cpp" />
     <ClCompile Include="Objects\Chandelier\ChandelierObject.cpp" />
     <ClCompile Include="Objects\Tess\TessellatedObject.cpp" />
@@ -195,6 +196,7 @@
     <ClInclude Include="Objects\Sponza\SponzaObject.h" />
     <ClInclude Include="Objects\Box\BoxObject.h" />
     <ClInclude Include="Objects\Axe\AxeObject.h" />
+    <ClInclude Include="Objects\Terrain\TerrainObject.h" />
     <ClInclude Include="Objects\Bulb\BulbObject.h" />
     <ClInclude Include="Objects\Chandelier\ChandelierObject.h" />
     <ClInclude Include="Objects\Tess\TessellatedObject.h" />
@@ -208,6 +210,7 @@
     <None Include="Shaders\deferred_light.hlsl" />
     <None Include="Shaders\postprocess.hlsl" />
     <None Include="Shaders\axe.hlsl" />
+    <None Include="Shaders\terrain.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

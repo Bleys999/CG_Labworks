@@ -12,6 +12,7 @@ class TextureManager;
 class RenderingSystem;
 class ChandelierObject;
 class BulbObject;
+class TerrainObject;
 
 class Scene
 {
@@ -39,8 +40,10 @@ public:
     bool IsOctreeCullingEnabled() const { return mOctreeCulling; }
     const std::vector<ChandelierObject*>& GetChandeliers() const { return mChandeliers; }
     const std::vector<BulbObject*>& GetBulbs() const { return mBulbs; }
+    TerrainObject* GetTerrain() const { return mTerrain; }
 
 private:
+    bool SpawnTerrain(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering);
     bool SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     bool SpawnBulb(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     bool SpawnAxe(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering);
@@ -52,6 +55,7 @@ private:
     std::vector<std::unique_ptr<GameObject>> mGameObjects;
     std::vector<ChandelierObject*> mChandeliers;
     std::vector<BulbObject*> mBulbs;
+    TerrainObject* mTerrain = nullptr;
     TextureManager* mTextureManager;
     Octree mOctree;
     bool mFrustumCulling = false;

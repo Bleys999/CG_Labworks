@@ -47,6 +47,15 @@ struct Config
     static constexpr bool ParticleGpuSort = true;
     static constexpr bool ParticlesEnabled = false;
 
+    static constexpr bool TerrainOnly = true;
+    static constexpr float TerrainSize = 6000.0f;
+    static constexpr float TerrainHeight = 650.0f;
+    static constexpr UINT TerrainTileQuads = 32;
+    static constexpr UINT TerrainMaxDepth = 5;
+    static constexpr float TerrainLodFactor = 2.2f;
+    static constexpr float TerrainFlattenMargin = 120.0f;
+    static constexpr float TerrainFlattenFalloff = 700.0f;
+
     static constexpr float FogStart = 120.0f;
     static constexpr float FogEnd = 2200.0f;
     static constexpr float FogStrength = 0.82f;
