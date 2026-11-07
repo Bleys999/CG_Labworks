@@ -266,7 +266,10 @@ void Scene::Update(const GameTimer& gt, const Camera& camera)
     }
 
     if (mTerrain)
+    {
+        mTerrain->SetCullingEnabled(mFrustumCulling);
         mTerrain->SelectNodes(camera.GetPosition3f(), camera.GetWorldFrustum());
+    }
 }
 
 bool Scene::ShouldDrawObject(GameObject* object, const BoundingFrustum& frustum) const

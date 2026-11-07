@@ -281,12 +281,12 @@ void Camera::HandleInput(const GameTimer& gt, const Input& input)
     if (input.IsKeyDown(VK_SHIFT))
         speed *= 4.0f;
 
-    if (input.IsKeyDown('W') || input.IsKeyDown('w')) Walk(speed);
-    if (input.IsKeyDown('S') || input.IsKeyDown('s')) Walk(-speed);
-    if (input.IsKeyDown('A') || input.IsKeyDown('a')) Strafe(-speed);
-    if (input.IsKeyDown('D') || input.IsKeyDown('d')) Strafe(speed);
-    if (input.IsKeyDown('Q') || input.IsKeyDown('q')) Fly(-speed);
-    if (input.IsKeyDown('E') || input.IsKeyDown('e')) Fly(speed);
+    if (input.IsKeyDown('W')) Walk(speed);
+    if (input.IsKeyDown('S')) Walk(-speed);
+    if (input.IsKeyDown('A')) Strafe(-speed);
+    if (input.IsKeyDown('D')) Strafe(speed);
+    if (input.IsKeyDown('Q')) Fly(-speed);
+    if (input.IsKeyDown('E')) Fly(speed);
 
     if (input.IsMouseButtonDown())
     {

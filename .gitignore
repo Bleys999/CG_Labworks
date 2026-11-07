@@ -49,3 +49,5 @@ Temporary Items
 .vs/
 Debug/
 Release/
+*.tmd
+*.tmd.bak

@@ -505,7 +505,7 @@ void TerrainObject::SelectNodes(const XMFLOAT3& cameraPos, const BoundingFrustum
     mMaxLevelDrawn = 0;
     if (mNodeMinMax.empty())
         return;
-    SelectRecursive(0, 0, 0, cameraPos, &frustum, Config::TerrainLodFactor, mDrawNodes);
+    SelectRecursive(0, 0, 0, cameraPos, mCullingEnabled ? &frustum : nullptr, Config::TerrainLodFactor, mDrawNodes);
     SelectRecursive(0, 0, 0, cameraPos, nullptr, Config::TerrainLodFactor * 0.5f, mShadowNodes);
 }
 
@@ -533,7 +533,7 @@ void TerrainObject::SelectRecursive(UINT level, UINT ix, UINT iz, const XMFLOAT3
         node.Size = size;
         node.Level = (float)level;
         out.push_back(node);
-        if (frustum)
+        if (&out == &mDrawNodes)
             mMaxLevelDrawn = (std::max)(mMaxLevelDrawn, level);
         return;
     }

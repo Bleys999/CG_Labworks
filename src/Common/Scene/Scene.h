@@ -58,7 +58,7 @@ private:
     TerrainObject* mTerrain = nullptr;
     TextureManager* mTextureManager;
     Octree mOctree;
-    bool mFrustumCulling = false;
+    bool mFrustumCulling = true;
     bool mOctreeCulling = false;
     int mCullableCount = 0;
     int mDrawnCount = 0;

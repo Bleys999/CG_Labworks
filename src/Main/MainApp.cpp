@@ -114,9 +114,9 @@ void MainApp::Update(const GameTimer& gt)
     const bool f7 = mInput.IsKeyDown(VK_F7);
     const bool f8 = mInput.IsKeyDown(VK_F8);
     const bool f9 = mInput.IsKeyDown(VK_F9);
-    const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N') || mInput.IsKeyDown('n');
-    const bool r = mInput.IsKeyDown('R') || mInput.IsKeyDown('r');
-    const bool t = mInput.IsKeyDown('T') || mInput.IsKeyDown('t');
+    const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N');
+    const bool r = mInput.IsKeyDown('R');
+    const bool t = mInput.IsKeyDown('T');
     if (f3 && !mPrevF3)
     {
         mScene.ToggleFrustumCulling();
@@ -291,7 +291,8 @@ void MainApp::RefreshWindowCaption()
     std::wstring frustum = mScene.IsFrustumCullingEnabled() ? L"ON" : L"OFF";
     std::wstring octree = mScene.IsOctreeCullingEnabled() ? L"ON" : L"OFF";
     const UINT viz = mRendering.GetShadowDebugMode();
-    const UINT shadowOn = (viz == 1) ? 0 : 1;
+    const wchar_t* vizNames[] = { L"Normal", L"NoShadow", L"Cascades" };
+    const wchar_t* vizName = vizNames[viz < 3 ? viz : 0];
     std::wstring ndfName = mRendering.GetNdfMode() == 0 ? L"GGX" : L"Off";
     std::wstring terrainInfo;
     if (TerrainObject* terrain = mScene.GetTerrain())
@@ -299,14 +300,15 @@ void MainApp::RefreshWindowCaption()
         const wchar_t* modes[] = { L"off", L"color", L"wire" };
         terrainInfo = L"  T terrain lod:" + std::wstring(modes[terrain->GetLodDebug() % 3]) +
             L" nodes:" + std::to_wstring(terrain->GetDrawnNodeCount()) +
+            L" tris:" + std::to_wstring(terrain->GetDrawnTriangleCount()) +
             L" culled:" + std::to_wstring(terrain->GetCulledNodeCount()) +
             L" depth:" + std::to_wstring(terrain->GetMaxLevelDrawn());
     }
     mMainWndCaption = L"NDF Mode: " + ndfName +
-        L" | Shadow: " + std::to_wstring(shadowOn) +
+        L"  F5/F6/F7:" + std::wstring(vizName) +
         L"  F10  F3 frustum:" + frustum +
         L"  F4 octree:" + octree +
-        L"  F5/F6/F7  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
+        L"  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
         L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +
         L"  R fisheye:" + std::wstring(mRendering.IsFisheyeEnabled() ? L"ON" : L"OFF") +
         L"  tess:" + std::wstring(mRendering.IsTessBaked() ? L"BAKED" : L"LIVE") +

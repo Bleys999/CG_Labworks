@@ -42,7 +42,10 @@ public:
 
     void CycleLodDebug() { mLodDebug = (mLodDebug + 1) % 3; }
     UINT GetLodDebug() const { return mLodDebug; }
+    void SetCullingEnabled(bool enabled) { mCullingEnabled = enabled; }
+    bool IsCullingEnabled() const { return mCullingEnabled; }
     UINT GetDrawnNodeCount() const { return (UINT)mDrawNodes.size(); }
+    UINT GetDrawnTriangleCount() const { return (UINT)mDrawNodes.size() * (mGridIndexCount / 3); }
     UINT GetCulledNodeCount() const { return mCulledNodes; }
     UINT GetMaxLevelDrawn() const { return mMaxLevelDrawn; }
 
@@ -89,6 +92,7 @@ private:
     UINT mCulledNodes = 0;
     UINT mMaxLevelDrawn = 0;
     UINT mLodDebug = 0;
+    bool mCullingEnabled = true;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> mHeightTex;
     Microsoft::WRL::ComPtr<ID3D12Resource> mHeightUpload;

@@ -115,6 +115,17 @@ float3 SampleCascadeTile(uint cascade, float2 uv)
     return gCascade3.Sample(gIblSampler, uv).rgb;
 }
 
+float3 CascadeColor(uint cascade)
+{
+    if (cascade == 0)
+        return float3(1.0f, 0.12f, 0.12f);
+    if (cascade == 1)
+        return float3(0.12f, 0.85f, 0.18f);
+    if (cascade == 2)
+        return float3(1.0f, 0.92f, 0.12f);
+    return float3(0.18f, 0.35f, 1.0f);
+}
+
 float3 CascadeTile(uint cascade, float3 worldPos, float3 N)
 {
     const float scale = 0.01f;
@@ -278,7 +289,12 @@ float4 PS(FSOut pin) : SV_Target
     }
 
     if (gDebugMode == 2)
-        Lo = lerp(CascadeTile(cascade, worldPos, N), Lo, saturate(shadow + spotLit + pointLit));
+    {
+        float lit = saturate(shadow + spotLit + pointLit);
+        float3 tiles = CascadeTile(cascade, worldPos, N);
+        float3 colored = lerp(Lo, CascadeColor(cascade), 0.62f);
+        Lo = lerp(tiles, colored, lit);
+    }
 
     return float4(Lo, 1.0f);
 }
