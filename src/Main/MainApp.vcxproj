@@ -211,6 +211,8 @@
     <None Include="Shaders\postprocess.hlsl" />
     <None Include="Shaders\axe.hlsl" />
     <None Include="Shaders\terrain.hlsl" />
+    <None Include="Shaders\taa.hlsl" />
+    <None Include="Shaders\taa_velocity.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

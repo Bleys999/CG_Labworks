@@ -45,6 +45,8 @@ bool Scene::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
     }
     if (!SpawnTerrain(device, cmdList, textureManager, rendering))
         return false;
+    if (!SpawnMotionBox(device, cmdList, textureManager))
+        return false;
 
     BuildOctree();
     return true;
@@ -63,6 +65,35 @@ bool Scene::SpawnTerrain(ID3D12Device* device, ID3D12GraphicsCommandList* cmdLis
     mTerrain = terrain.get();
     AddObject(std::move(terrain));
     return true;
+}
+
+bool Scene::SpawnMotionBox(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)
+{
+    float y = 30.0f;
+    const float z = 70.0f;
+    if (mTerrain)
+        y = mTerrain->GetHeightAt(0.0f, z) + 36.0f;
+
+    auto box = std::make_unique<BoxObject>("MotionBox");
+    box->EnableMotion(0.0f, y, z);
+    box->SetPosition(0.0f, y, z);
+    box->SetScale(16.0f, 16.0f, 16.0f);
+    box->SetDiffuseFactor(XMFLOAT4(0.85f, 0.28f, 0.08f, 1.0f));
+    box->SetMetallic(0.0f);
+    box->SetRoughness(0.45f);
+    box->SetCullable(true);
+    if (!box->Initialize(device, cmdList, textureManager))
+        return false;
+    mMotionBox = box.get();
+    AddObject(std::move(box));
+    ++mCullableCount;
+    return true;
+}
+
+void Scene::DrawMotionVelocity(ID3D12GraphicsCommandList* cmdList)
+{
+    if (mMotionBox)
+        mMotionBox->DrawVelocity(cmdList);
 }
 
 bool Scene::SpawnChandeliers(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)

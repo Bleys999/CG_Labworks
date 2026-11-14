@@ -49,10 +49,29 @@ struct PostProcessConstants
     float PostEnable = 1.0f;
     float EdgeStrength = 0.9f;
     float Fisheye = 0.0f;
+    float ShowVelocity = 0.0f;
+    float VelocityScale = 32.0f;
+    float PostPad0 = 0.0f;
+    float PostPad1 = 0.0f;
     DirectX::XMFLOAT4X4 InvViewProj = MathHelper::Identity4x4();
-    float Pad[32] = {};
+    float Pad[28] = {};
 };
 static_assert(sizeof(PostProcessConstants) == 256, "PostProcessConstants must be 256 bytes");
+
+struct TaaConstants
+{
+    DirectX::XMFLOAT4X4 InvJitteredViewProj = MathHelper::Identity4x4();
+    DirectX::XMFLOAT4X4 UnjitteredViewProj = MathHelper::Identity4x4();
+    DirectX::XMFLOAT4X4 PrevUnjitteredViewProj = MathHelper::Identity4x4();
+    DirectX::XMFLOAT4X4 JitteredViewProj = MathHelper::Identity4x4();
+    DirectX::XMFLOAT2 InvScreen = { 0.0f, 0.0f };
+    float HasHistory = 0.0f;
+    float ClampHistory = 1.0f;
+    float BlendCurrent = 0.1f;
+    float Pad0 = 0.0f;
+    float Pad1 = 0.0f;
+    float Pad2 = 0.0f;
+};
 
 struct ShadowPassConstants
 {
@@ -108,6 +127,29 @@ public:
         const D3D12_VIEWPORT& viewport,
         const D3D12_RECT& scissor);
 
+    void ApplyCameraJitter(Camera& camera);
+    bool WantsVelocityPass() const { return mTaaEnabled || mShowVelocity; }
+    void BeginCameraVelocity(
+        ID3D12GraphicsCommandList* cmdList,
+        const Camera& camera,
+        const D3D12_VIEWPORT& viewport,
+        const D3D12_RECT& scissor);
+    void BeginObjectVelocity(ID3D12GraphicsCommandList* cmdList);
+    void EndVelocityPass(ID3D12GraphicsCommandList* cmdList);
+    void ResolveTaa(
+        ID3D12GraphicsCommandList* cmdList,
+        const D3D12_VIEWPORT& viewport,
+        const D3D12_RECT& scissor);
+    void RememberCamera(const Camera& camera);
+    void InvalidateTaaHistory();
+
+    void ToggleTaa();
+    bool IsTaaEnabled() const { return mTaaEnabled; }
+    void ToggleTaaClamp() { mTaaClamp = !mTaaClamp; InvalidateTaaHistory(); }
+    bool IsTaaClampEnabled() const { return mTaaClamp; }
+    void ToggleVelocityView() { mShowVelocity = !mShowVelocity; }
+    bool IsVelocityView() const { return mShowVelocity; }
+
     void ToggleFogEnabled() { mFogEnabled = !mFogEnabled; }
     bool IsFogEnabled() const { return mFogEnabled; }
     void ToggleEdgeEnabled() { mEdgeEnabled = !mEdgeEnabled; }
@@ -123,7 +165,11 @@ private:
     void BuildShadowPass(ID3D12Device* device);
     void BuildLightingPass(ID3D12Device* device);
     void BuildPostPass(ID3D12Device* device);
+    void BuildTaaPass(ID3D12Device* device);
     void CreateSceneTarget(ID3D12Device* device, UINT width, UINT height);
+    void CreateTaaTargets(ID3D12Device* device, UINT width, UINT height);
+    void FillTaaConstants(const Camera& camera);
+    void UpdateTaaSrvs(ID3D12Device* device);
     void InitDefaultLights();
     void CreateShadowMaps(ID3D12Device* device);
     void UpdateLightingSrvs(ID3D12Device* device);
@@ -177,6 +223,35 @@ private:
     bool mFogEnabled = true;
     bool mEdgeEnabled = true;
     bool mFisheyeEnabled = false;
+    bool mTaaEnabled = true;
+    bool mTaaClamp = true;
+    bool mShowVelocity = false;
+    bool mTaaHistoryValid = false;
+    bool mPrevCameraValid = false;
+    bool mTaaResolved = false;
+    UINT mTaaRead = 0;
+    UINT mHaltonIndex = 0;
+    DirectX::XMFLOAT4X4 mPrevUnjitteredViewProj = MathHelper::Identity4x4();
+    TaaConstants mTaaCpu = {};
+    std::unique_ptr<UploadBuffer<TaaConstants>> mTaaCB;
+    Microsoft::WRL::ComPtr<ID3D12Resource> mHistory[2];
+    Microsoft::WRL::ComPtr<ID3D12Resource> mVelocity;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mTaaRtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mTaaSrvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> mTaaDepthHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE mHistoryRtv[2] = {};
+    D3D12_CPU_DESCRIPTOR_HANDLE mVelocityRtv = {};
+    D3D12_RESOURCE_STATES mHistoryState[2] = {
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+    };
+    D3D12_RESOURCE_STATES mVelocityState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> mVelocityRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> mVelocityObjectRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> mTaaRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> mVelocityPSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> mVelocityObjectPSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> mTaaPSO;
     UINT mNdfMode = 0;
     UINT mSceneWidth = 0;
     UINT mSceneHeight = 0;

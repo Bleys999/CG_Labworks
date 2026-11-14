@@ -41,9 +41,11 @@ public:
     const std::vector<ChandelierObject*>& GetChandeliers() const { return mChandeliers; }
     const std::vector<BulbObject*>& GetBulbs() const { return mBulbs; }
     TerrainObject* GetTerrain() const { return mTerrain; }
+    void DrawMotionVelocity(ID3D12GraphicsCommandList* cmdList);
 
 private:
     bool SpawnTerrain(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering);
+    bool SpawnMotionBox(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     bool SpawnScatteredBoxes(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     bool SpawnBulb(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager);
     bool SpawnAxe(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager, RenderingSystem* rendering);
@@ -56,6 +58,7 @@ private:
     std::vector<ChandelierObject*> mChandeliers;
     std::vector<BulbObject*> mBulbs;
     TerrainObject* mTerrain = nullptr;
+    class BoxObject* mMotionBox = nullptr;
     TextureManager* mTextureManager;
     Octree mOctree;
     bool mFrustumCulling = true;

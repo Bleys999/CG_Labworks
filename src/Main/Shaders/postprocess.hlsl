@@ -4,6 +4,7 @@ Texture2D gScene : register(t0);
 Texture2D gAlbedo : register(t1);
 Texture2D gNormal : register(t2);
 Texture2D gDepth : register(t3);
+Texture2D gVelocity : register(t4);
 SamplerState gLinearClamp : register(s0);
 SamplerState gPointClamp : register(s1);
 
@@ -20,6 +21,9 @@ cbuffer cbPost : register(b0)
     float gPostEnable;
     float gEdgeStrength;
     float gFisheye;
+    float gShowVelocity;
+    float gVelocityScale;
+    float2 gPostPad;
     float4x4 gInvViewProj;
 };
 
@@ -123,6 +127,12 @@ float3 ApplyEdges(float3 color, float2 uv)
 
 float4 PS(FSOut pin) : SV_Target
 {
+    if (gShowVelocity > 0.5f)
+    {
+        float2 v = gVelocity.Sample(gPointClamp, pin.TexC).xy;
+        return float4(0.5f + v.x * gVelocityScale, 0.5f + v.y * gVelocityScale, 0.5f, 1.0f);
+    }
+
     bool inside = true;
     float2 uv = FisheyeUV(pin.TexC, inside);
     if (!inside)

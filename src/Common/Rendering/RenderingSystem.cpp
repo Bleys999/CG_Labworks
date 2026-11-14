@@ -39,6 +39,20 @@ namespace
         }
         return blob;
     }
+
+    float Halton(int index, int base)
+    {
+        float f = 1.0f;
+        float r = 0.0f;
+        int i = index;
+        while (i > 0)
+        {
+            f /= (float)base;
+            r += f * (float)(i % base);
+            i /= base;
+        }
+        return r;
+    }
 }
 
 bool RenderingSystem::Initialize(ID3D12Device* device)
@@ -55,6 +69,7 @@ bool RenderingSystem::Initialize(ID3D12Device* device)
     BuildShadowPass(device);
     BuildLightingPass(device);
     BuildPostPass(device);
+    BuildTaaPass(device);
     UpdateLightingSrvs(device);
     UpdatePostSrvs(device);
     return true;
@@ -338,6 +353,8 @@ void RenderingSystem::DrawPostProcess(
     pc.PostEnable = 1.0f;
     pc.EdgeStrength = mEdgeEnabled ? Config::EdgeStrength : 0.0f;
     pc.Fisheye = mFisheyeEnabled ? 1.0f : 0.0f;
+    pc.ShowVelocity = mShowVelocity ? 1.0f : 0.0f;
+    pc.VelocityScale = 40.0f;
     pc.InvViewProj = mLightingCpu.InvViewProj;
     mPostCB->CopyData(0, pc);
 
@@ -346,6 +363,28 @@ void RenderingSystem::DrawPostProcess(
 
     ID3D12DescriptorHeap* heaps[] = { mPostSrvHeap.Get() };
     cmdList->SetDescriptorHeaps(1, heaps);
+
+    if (mPostSrvHeap && mDevice)
+    {
+        UINT inc = mDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        CD3DX12_CPU_DESCRIPTOR_HANDLE cpu(mPostSrvHeap->GetCPUDescriptorHandleForHeapStart());
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Texture2D.MipLevels = 1;
+        srv.Format = SceneFormat;
+        ID3D12Resource* sceneSrc = mSceneColor.Get();
+        if (mTaaResolved && mHistory[mTaaRead])
+            sceneSrc = mHistory[mTaaRead].Get();
+        mDevice->CreateShaderResourceView(sceneSrc, &srv, cpu);
+        if (mVelocity)
+        {
+            cpu = mPostSrvHeap->GetCPUDescriptorHandleForHeapStart();
+            cpu.Offset(4, inc);
+            srv.Format = DXGI_FORMAT_R16G16_FLOAT;
+            mDevice->CreateShaderResourceView(mVelocity.Get(), &srv, cpu);
+        }
+    }
 
     cmdList->SetGraphicsRootConstantBufferView(0, mPostCB->Resource()->GetGPUVirtualAddress());
     cmdList->SetGraphicsRootDescriptorTable(1, mPostSrvHeap->GetGPUDescriptorHandleForHeapStart());
@@ -1046,6 +1085,7 @@ void RenderingSystem::CreateSceneTarget(ID3D12Device* device, UINT width, UINT h
     ThrowIfFailed(device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&mSceneRtvHeap)));
     mSceneRtv = mSceneRtvHeap->GetCPUDescriptorHandleForHeapStart();
     device->CreateRenderTargetView(mSceneColor.Get(), nullptr, mSceneRtv);
+    CreateTaaTargets(device, width, height);
 }
 
 void RenderingSystem::UpdatePostSrvs(ID3D12Device* device)
@@ -1056,7 +1096,7 @@ void RenderingSystem::UpdatePostSrvs(ID3D12Device* device)
     if (!mPostSrvHeap)
     {
         D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-        heapDesc.NumDescriptors = 4;
+        heapDesc.NumDescriptors = 5;
         heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mPostSrvHeap)));
@@ -1088,6 +1128,13 @@ void RenderingSystem::UpdatePostSrvs(ID3D12Device* device)
     depthSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     depthSrv.Texture2D.MipLevels = 1;
     device->CreateShaderResourceView(mGBuffer.DepthResource(), &depthSrv, cpu);
+    cpu.Offset(1, inc);
+
+    if (mVelocity)
+    {
+        srv.Format = DXGI_FORMAT_R16G16_FLOAT;
+        device->CreateShaderResourceView(mVelocity.Get(), &srv, cpu);
+    }
 }
 
 void RenderingSystem::BuildPostPass(ID3D12Device* device)
@@ -1095,7 +1142,7 @@ void RenderingSystem::BuildPostPass(ID3D12Device* device)
     mPostVs = CompileShaderFile(L"postprocess.hlsl", "VSFullscreen", "vs_5_0");
     mPostPs = CompileShaderFile(L"postprocess.hlsl", "PS", "ps_5_0");
 
-    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
+    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0);
     CD3DX12_ROOT_PARAMETER slot[2];
     slot[0].InitAsConstantBufferView(0);
     slot[1].InitAsDescriptorTable(1, &srvRange);
@@ -1157,4 +1204,372 @@ void RenderingSystem::BuildPostPass(ID3D12Device* device)
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
     ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&mPostPSO)));
+}
+
+void RenderingSystem::ToggleTaa()
+{
+    mTaaEnabled = !mTaaEnabled;
+    InvalidateTaaHistory();
+}
+
+void RenderingSystem::InvalidateTaaHistory()
+{
+    mTaaHistoryValid = false;
+    mTaaResolved = false;
+}
+
+void RenderingSystem::ApplyCameraJitter(Camera& camera)
+{
+    if (!mTaaEnabled || mSceneWidth == 0 || mSceneHeight == 0)
+    {
+        camera.SetProjectionJitter(0.0f, 0.0f);
+        return;
+    }
+
+    const int sample = (int)(mHaltonIndex % 16u) + 1;
+    ++mHaltonIndex;
+    const float jx = (Halton(sample, 2) - 0.5f) * 2.0f / (float)mSceneWidth;
+    const float jy = (Halton(sample, 3) - 0.5f) * 2.0f / (float)mSceneHeight;
+    camera.SetProjectionJitter(jx, jy);
+}
+
+void RenderingSystem::FillTaaConstants(const Camera& camera)
+{
+    const XMMATRIX view = camera.GetView();
+    const XMMATRIX jittered = view * camera.GetProj();
+    const XMMATRIX unjittered = view * camera.GetUnjitteredProj();
+    const XMMATRIX prev = mPrevCameraValid ? XMLoadFloat4x4(&mPrevUnjitteredViewProj) : unjittered;
+
+    TaaConstants tc{};
+    XMStoreFloat4x4(&tc.InvJitteredViewProj, XMMatrixTranspose(XMMatrixInverse(nullptr, jittered)));
+    XMStoreFloat4x4(&tc.UnjitteredViewProj, XMMatrixTranspose(unjittered));
+    XMStoreFloat4x4(&tc.PrevUnjitteredViewProj, XMMatrixTranspose(prev));
+    XMStoreFloat4x4(&tc.JitteredViewProj, XMMatrixTranspose(jittered));
+    tc.InvScreen = XMFLOAT2(
+        mSceneWidth > 0 ? 1.0f / (float)mSceneWidth : 0.0f,
+        mSceneHeight > 0 ? 1.0f / (float)mSceneHeight : 0.0f);
+    tc.HasHistory = mTaaHistoryValid ? 1.0f : 0.0f;
+    tc.ClampHistory = mTaaClamp ? 1.0f : 0.0f;
+    tc.BlendCurrent = 0.1f;
+    mTaaCpu = tc;
+    if (mTaaCB)
+        mTaaCB->CopyData(0, tc);
+}
+
+void RenderingSystem::RememberCamera(const Camera& camera)
+{
+    XMStoreFloat4x4(&mPrevUnjitteredViewProj, camera.GetView() * camera.GetUnjitteredProj());
+    mPrevCameraValid = true;
+}
+
+void RenderingSystem::CreateTaaTargets(ID3D12Device* device, UINT width, UINT height)
+{
+    mHistory[0].Reset();
+    mHistory[1].Reset();
+    mVelocity.Reset();
+    mTaaRtvHeap.Reset();
+    mTaaHistoryValid = false;
+    mTaaResolved = false;
+    mTaaRead = 0;
+    if (!device || width == 0 || height == 0)
+        return;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = SceneFormat;
+    desc.SampleDesc.Count = 1;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE clear = {};
+    clear.Format = SceneFormat;
+    clear.Color[3] = 1.0f;
+
+    for (int i = 0; i < 2; ++i)
+    {
+        ThrowIfFailed(device->CreateCommittedResource(
+            &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            &clear,
+            IID_PPV_ARGS(&mHistory[i])));
+        mHistoryState[i] = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    }
+
+    desc.Format = DXGI_FORMAT_R16G16_FLOAT;
+    clear.Format = DXGI_FORMAT_R16G16_FLOAT;
+    ThrowIfFailed(device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        &clear,
+        IID_PPV_ARGS(&mVelocity)));
+    mVelocityState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+    D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+    heapDesc.NumDescriptors = 3;
+    heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mTaaRtvHeap)));
+
+    UINT inc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE cpu(mTaaRtvHeap->GetCPUDescriptorHandleForHeapStart());
+    mHistoryRtv[0] = cpu;
+    device->CreateRenderTargetView(mHistory[0].Get(), nullptr, cpu);
+    cpu.Offset(1, inc);
+    mHistoryRtv[1] = cpu;
+    device->CreateRenderTargetView(mHistory[1].Get(), nullptr, cpu);
+    cpu.Offset(1, inc);
+    mVelocityRtv = cpu;
+    D3D12_RENDER_TARGET_VIEW_DESC rtv = {};
+    rtv.Format = DXGI_FORMAT_R16G16_FLOAT;
+    rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+    device->CreateRenderTargetView(mVelocity.Get(), &rtv, cpu);
+}
+
+void RenderingSystem::UpdateTaaSrvs(ID3D12Device* device)
+{
+    if (!device || !mTaaSrvHeap || !mSceneColor || !mHistory[mTaaRead] || !mVelocity || !mGBuffer.DepthResource())
+        return;
+
+    UINT inc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE cpu(mTaaSrvHeap->GetCPUDescriptorHandleForHeapStart());
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+    srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv.Texture2D.MipLevels = 1;
+
+    srv.Format = SceneFormat;
+    device->CreateShaderResourceView(mSceneColor.Get(), &srv, cpu);
+    cpu.Offset(1, inc);
+    device->CreateShaderResourceView(mHistory[mTaaRead].Get(), &srv, cpu);
+    cpu.Offset(1, inc);
+    srv.Format = DXGI_FORMAT_R16G16_FLOAT;
+    device->CreateShaderResourceView(mVelocity.Get(), &srv, cpu);
+    cpu.Offset(1, inc);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC depthSrv = {};
+    depthSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    depthSrv.Format = GBuffer::DepthSrvFormat;
+    depthSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    depthSrv.Texture2D.MipLevels = 1;
+    device->CreateShaderResourceView(mGBuffer.DepthResource(), &depthSrv, cpu);
+
+    if (mTaaDepthHeap)
+        device->CreateShaderResourceView(mGBuffer.DepthResource(), &depthSrv, mTaaDepthHeap->GetCPUDescriptorHandleForHeapStart());
+}
+
+void RenderingSystem::BuildTaaPass(ID3D12Device* device)
+{
+    mTaaCB = std::make_unique<UploadBuffer<TaaConstants>>(device, 1, true);
+
+    auto vsFull = CompileShaderFile(L"taa_velocity.hlsl", "VSFullscreen", "vs_5_0");
+    auto psVel = CompileShaderFile(L"taa_velocity.hlsl", "PSCameraVelocity", "ps_5_0");
+    auto vsObj = CompileShaderFile(L"taa.hlsl", "VSObjectVelocity", "vs_5_0");
+    auto psObj = CompileShaderFile(L"taa.hlsl", "PSObjectVelocity", "ps_5_0");
+    auto vsRes = CompileShaderFile(L"taa.hlsl", "VSFullscreen", "vs_5_0");
+    auto psRes = CompileShaderFile(L"taa.hlsl", "PSResolve", "ps_5_0");
+
+    CD3DX12_DESCRIPTOR_RANGE depthRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    CD3DX12_ROOT_PARAMETER velSlot[2];
+    velSlot[0].InitAsConstantBufferView(0);
+    velSlot[1].InitAsDescriptorTable(1, &depthRange);
+    CD3DX12_STATIC_SAMPLER_DESC pointClamp(
+        0, D3D12_FILTER_MIN_MAG_MIP_POINT,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+    CD3DX12_ROOT_SIGNATURE_DESC velDesc(2, velSlot, 1, &pointClamp, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+    ComPtr<ID3DBlob> serialized, error;
+    ThrowIfFailed(D3D12SerializeRootSignature(&velDesc, D3D_ROOT_SIGNATURE_VERSION_1, serialized.GetAddressOf(), error.GetAddressOf()));
+    ThrowIfFailed(device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(), IID_PPV_ARGS(&mVelocityRootSignature)));
+
+    CD3DX12_ROOT_PARAMETER objSlot[2];
+    objSlot[0].InitAsConstantBufferView(0);
+    objSlot[1].InitAsConstantBufferView(1);
+    CD3DX12_ROOT_SIGNATURE_DESC objDesc(2, objSlot, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    serialized.Reset();
+    error.Reset();
+    ThrowIfFailed(D3D12SerializeRootSignature(&objDesc, D3D_ROOT_SIGNATURE_VERSION_1, serialized.GetAddressOf(), error.GetAddressOf()));
+    ThrowIfFailed(device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(), IID_PPV_ARGS(&mVelocityObjectRootSignature)));
+
+    CD3DX12_DESCRIPTOR_RANGE taaRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
+    CD3DX12_ROOT_PARAMETER taaSlot[2];
+    taaSlot[0].InitAsConstantBufferView(0);
+    taaSlot[1].InitAsDescriptorTable(1, &taaRange);
+    CD3DX12_STATIC_SAMPLER_DESC linearClamp(
+        0, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+    CD3DX12_STATIC_SAMPLER_DESC pointClamp1(
+        1, D3D12_FILTER_MIN_MAG_MIP_POINT,
+        D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+    CD3DX12_STATIC_SAMPLER_DESC taaSamplers[2] = { linearClamp, pointClamp1 };
+    CD3DX12_ROOT_SIGNATURE_DESC taaDesc(2, taaSlot, 2, taaSamplers, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+    serialized.Reset();
+    error.Reset();
+    ThrowIfFailed(D3D12SerializeRootSignature(&taaDesc, D3D_ROOT_SIGNATURE_VERSION_1, serialized.GetAddressOf(), error.GetAddressOf()));
+    ThrowIfFailed(device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(), IID_PPV_ARGS(&mTaaRootSignature)));
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC pso = {};
+    pso.pRootSignature = mVelocityRootSignature.Get();
+    pso.VS = { reinterpret_cast<BYTE*>(vsFull->GetBufferPointer()), vsFull->GetBufferSize() };
+    pso.PS = { reinterpret_cast<BYTE*>(psVel->GetBufferPointer()), psVel->GetBufferSize() };
+    pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    pso.DepthStencilState.DepthEnable = false;
+    pso.DepthStencilState.StencilEnable = false;
+    pso.SampleMask = UINT_MAX;
+    pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    pso.NumRenderTargets = 1;
+    pso.RTVFormats[0] = DXGI_FORMAT_R16G16_FLOAT;
+    pso.SampleDesc.Count = 1;
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(&mVelocityPSO)));
+
+    D3D12_INPUT_ELEMENT_DESC layout[] =
+    {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC obj = {};
+    obj.InputLayout = { layout, 3 };
+    obj.pRootSignature = mVelocityObjectRootSignature.Get();
+    obj.VS = { reinterpret_cast<BYTE*>(vsObj->GetBufferPointer()), vsObj->GetBufferSize() };
+    obj.PS = { reinterpret_cast<BYTE*>(psObj->GetBufferPointer()), psObj->GetBufferSize() };
+    obj.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    obj.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    obj.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    obj.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    obj.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    obj.SampleMask = UINT_MAX;
+    obj.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    obj.NumRenderTargets = 1;
+    obj.RTVFormats[0] = DXGI_FORMAT_R16G16_FLOAT;
+    obj.DSVFormat = GBuffer::DepthFormat;
+    obj.SampleDesc.Count = 1;
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&obj, IID_PPV_ARGS(&mVelocityObjectPSO)));
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC res = pso;
+    res.pRootSignature = mTaaRootSignature.Get();
+    res.VS = { reinterpret_cast<BYTE*>(vsRes->GetBufferPointer()), vsRes->GetBufferSize() };
+    res.PS = { reinterpret_cast<BYTE*>(psRes->GetBufferPointer()), psRes->GetBufferSize() };
+    res.RTVFormats[0] = SceneFormat;
+    ThrowIfFailed(device->CreateGraphicsPipelineState(&res, IID_PPV_ARGS(&mTaaPSO)));
+
+    D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+    heapDesc.NumDescriptors = 4;
+    heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mTaaSrvHeap)));
+    heapDesc.NumDescriptors = 1;
+    ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&mTaaDepthHeap)));
+}
+
+void RenderingSystem::BeginCameraVelocity(
+    ID3D12GraphicsCommandList* cmdList,
+    const Camera& camera,
+    const D3D12_VIEWPORT& viewport,
+    const D3D12_RECT& scissor)
+{
+    if (!mVelocity || !mVelocityPSO || !mDevice)
+        return;
+
+    FillTaaConstants(camera);
+    UpdateTaaSrvs(mDevice);
+
+    if (mVelocityState != D3D12_RESOURCE_STATE_RENDER_TARGET)
+    {
+        auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(mVelocity.Get(), mVelocityState, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        cmdList->ResourceBarrier(1, &barrier);
+        mVelocityState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    }
+
+    float zero[4] = {};
+    cmdList->OMSetRenderTargets(1, &mVelocityRtv, FALSE, nullptr);
+    cmdList->ClearRenderTargetView(mVelocityRtv, zero, 0, nullptr);
+    cmdList->RSSetViewports(1, &viewport);
+    cmdList->RSSetScissorRects(1, &scissor);
+    cmdList->SetGraphicsRootSignature(mVelocityRootSignature.Get());
+    cmdList->SetPipelineState(mVelocityPSO.Get());
+    cmdList->SetGraphicsRootConstantBufferView(0, mTaaCB->Resource()->GetGPUVirtualAddress());
+    ID3D12DescriptorHeap* heap = mTaaDepthHeap.Get();
+    cmdList->SetDescriptorHeaps(1, &heap);
+    cmdList->SetGraphicsRootDescriptorTable(1, mTaaDepthHeap->GetGPUDescriptorHandleForHeapStart());
+    DrawFullscreenTriangle(cmdList);
+}
+
+void RenderingSystem::BeginObjectVelocity(ID3D12GraphicsCommandList* cmdList)
+{
+    if (!mVelocityObjectPSO || !mGBuffer.DepthResource())
+        return;
+
+    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+        mGBuffer.DepthResource(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_DEPTH_READ);
+    cmdList->ResourceBarrier(1, &barrier);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE dsv = mGBuffer.DepthDSV();
+    cmdList->OMSetRenderTargets(1, &mVelocityRtv, FALSE, &dsv);
+    cmdList->SetGraphicsRootSignature(mVelocityObjectRootSignature.Get());
+    cmdList->SetPipelineState(mVelocityObjectPSO.Get());
+    cmdList->SetGraphicsRootConstantBufferView(0, mTaaCB->Resource()->GetGPUVirtualAddress());
+}
+
+void RenderingSystem::EndVelocityPass(ID3D12GraphicsCommandList* cmdList)
+{
+    D3D12_RESOURCE_BARRIER barriers[2];
+    barriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(
+        mGBuffer.DepthResource(),
+        D3D12_RESOURCE_STATE_DEPTH_READ,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(
+        mVelocity.Get(),
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cmdList->ResourceBarrier(2, barriers);
+    mVelocityState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+}
+
+void RenderingSystem::ResolveTaa(
+    ID3D12GraphicsCommandList* cmdList,
+    const D3D12_VIEWPORT& viewport,
+    const D3D12_RECT& scissor)
+{
+    mTaaResolved = false;
+    if (!mTaaEnabled || !mHistory[0] || !mTaaPSO || !mDevice)
+        return;
+
+    const UINT write = 1u - mTaaRead;
+    UpdateTaaSrvs(mDevice);
+
+    if (mHistoryState[write] != D3D12_RESOURCE_STATE_RENDER_TARGET)
+    {
+        auto toRt = CD3DX12_RESOURCE_BARRIER::Transition(
+            mHistory[write].Get(), mHistoryState[write], D3D12_RESOURCE_STATE_RENDER_TARGET);
+        cmdList->ResourceBarrier(1, &toRt);
+        mHistoryState[write] = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    }
+
+    cmdList->OMSetRenderTargets(1, &mHistoryRtv[write], FALSE, nullptr);
+    cmdList->RSSetViewports(1, &viewport);
+    cmdList->RSSetScissorRects(1, &scissor);
+    cmdList->SetGraphicsRootSignature(mTaaRootSignature.Get());
+    cmdList->SetPipelineState(mTaaPSO.Get());
+    cmdList->SetGraphicsRootConstantBufferView(0, mTaaCB->Resource()->GetGPUVirtualAddress());
+    ID3D12DescriptorHeap* heap = mTaaSrvHeap.Get();
+    cmdList->SetDescriptorHeaps(1, &heap);
+    cmdList->SetGraphicsRootDescriptorTable(1, mTaaSrvHeap->GetGPUDescriptorHandleForHeapStart());
+    DrawFullscreenTriangle(cmdList);
+
+    auto toSrv = CD3DX12_RESOURCE_BARRIER::Transition(
+        mHistory[write].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cmdList->ResourceBarrier(1, &toSrv);
+    mHistoryState[write] = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    mTaaRead = write;
+    mTaaHistoryValid = true;
+    mTaaResolved = true;
 }

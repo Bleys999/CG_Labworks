@@ -158,7 +158,7 @@ void Camera::LookAt(const XMFLOAT3& pos, const XMFLOAT3& target, const XMFLOAT3&
 BoundingFrustum Camera::GetWorldFrustum()const
 {
     BoundingFrustum frustum;
-    BoundingFrustum::CreateFromMatrix(frustum, GetProj());
+    BoundingFrustum::CreateFromMatrix(frustum, GetUnjitteredProj());
     XMMATRIX invView = XMMatrixInverse(nullptr, GetView());
     frustum.Transform(frustum, invView);
     return frustum;
@@ -169,9 +169,23 @@ XMMATRIX Camera::GetView()const
     return XMLoadFloat4x4(&mView);
 }
 
-XMMATRIX Camera::GetProj()const
+XMMATRIX Camera::GetUnjitteredProj()const
 {
     return XMLoadFloat4x4(&mProj);
+}
+
+void Camera::SetProjectionJitter(float ndcX, float ndcY)
+{
+    mJitterX = ndcX;
+    mJitterY = ndcY;
+}
+
+XMMATRIX Camera::GetProj()const
+{
+    XMMATRIX P = XMLoadFloat4x4(&mProj);
+    P.r[2] = XMVectorSetX(P.r[2], mJitterX);
+    P.r[2] = XMVectorSetY(P.r[2], mJitterY);
+    return P;
 }
 
 XMFLOAT4X4 Camera::GetView4x4f()const

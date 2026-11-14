@@ -54,7 +54,17 @@ bool BoxObject::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdL
 
     mGeometry = sSharedGeometry;
     mObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(device, 1, true);
+    if (mMotionDemo)
+        mVelocityCB = std::make_unique<UploadBuffer<MotionWorlds>>(device, 1, true);
     return true;
+}
+
+void BoxObject::EnableMotion(float x, float y, float z)
+{
+    mMotionDemo = true;
+    mAllowBillboard = false;
+    mMotionOrigin = XMFLOAT3(x, y, z);
+    XMStoreFloat4x4(&mPrevWorld, GetWorldMatrix());
 }
 
 bool BoxObject::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)
@@ -69,6 +79,15 @@ bool BoxObject::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdL
 
 void BoxObject::Update(const GameTimer& gt)
 {
+    if (!mMotionDemo)
+        return;
+
+    XMStoreFloat4x4(&mPrevWorld, GetWorldMatrix());
+    const float t = gt.TotalTime();
+    mPosition.x = mMotionOrigin.x + sinf(t * 0.65f) * 110.0f;
+    mPosition.y = mMotionOrigin.y;
+    mPosition.z = mMotionOrigin.z;
+    UpdateWorldBounds();
 }
 
 void BoxObject::SetFrameCamera(const XMFLOAT3& pos)
@@ -121,7 +140,7 @@ void BoxObject::UpdateConstantBuffer(DirectX::FXMMATRIX view, DirectX::FXMMATRIX
     const XMVECTOR camera = XMLoadFloat3(&mCameraPos);
     const XMVECTOR position = XMLoadFloat3(&mPosition);
     const float distance = XMVectorGetX(XMVector3Length(XMVectorSubtract(camera, position)));
-    mBillboardLod = distance > Config::BillboardLodDistance;
+    mBillboardLod = mAllowBillboard && distance > Config::BillboardLodDistance;
 
     WriteObjectConstants(false);
 }
@@ -146,6 +165,24 @@ void BoxObject::Draw(ID3D12GraphicsCommandList* cmdList)
         ? mGeometry->DrawArgs["billboard"]
         : mGeometry->DrawArgs["box"];
 
+    cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
+    cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
+    cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmdList->DrawIndexedInstanced(submesh.IndexCount, 1, submesh.StartIndexLocation, 0, 0);
+}
+
+void BoxObject::DrawVelocity(ID3D12GraphicsCommandList* cmdList)
+{
+    if (!mMotionDemo || !mGeometry || !mVisible || !mVelocityCB)
+        return;
+
+    MotionWorlds worlds;
+    XMStoreFloat4x4(&worlds.Curr, XMMatrixTranspose(GetWorldMatrix()));
+    XMStoreFloat4x4(&worlds.Prev, XMMatrixTranspose(XMLoadFloat4x4(&mPrevWorld)));
+    mVelocityCB->CopyData(0, worlds);
+    cmdList->SetGraphicsRootConstantBufferView(1, mVelocityCB->Resource()->GetGPUVirtualAddress());
+
+    const SubmeshGeometry& submesh = mGeometry->DrawArgs["box"];
     cmdList->IASetVertexBuffers(0, 1, &mGeometry->VertexBufferView());
     cmdList->IASetIndexBuffer(&mGeometry->IndexBufferView());
     cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

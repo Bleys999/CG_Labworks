@@ -49,6 +49,10 @@ private:
     bool mPrevF10 = false;
     bool mPrevR = false;
     bool mPrevT = false;
+    bool mPrevF2 = false;
+    bool mPrevM = false;
+    bool mPrevH = false;
+    bool mPrevG = false;
 };
 
 MainApp::MainApp(HINSTANCE hInstance) : D3DApp(hInstance) {}
@@ -117,6 +121,32 @@ void MainApp::Update(const GameTimer& gt)
     const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N');
     const bool r = mInput.IsKeyDown('R');
     const bool t = mInput.IsKeyDown('T');
+    const bool f2 = mInput.IsKeyDown(VK_F2);
+    const bool m = mInput.IsKeyDown('M');
+    const bool h = mInput.IsKeyDown('H');
+    const bool g = mInput.IsKeyDown('G');
+    if (f2 && !mPrevF2)
+    {
+        mRendering.ToggleTaa();
+        RefreshWindowCaption();
+    }
+    if (m && !mPrevM)
+    {
+        mRendering.ToggleVelocityView();
+        RefreshWindowCaption();
+    }
+    if (h && !mPrevH)
+    {
+        mRendering.ToggleTaaClamp();
+        RefreshWindowCaption();
+    }
+    if (g && !mPrevG)
+    {
+        const XMFLOAT3 p = mCamera.GetPosition3f();
+        mCamera.SetPosition(p.x + 350.0f, p.y + 40.0f, p.z + 180.0f);
+        mRendering.InvalidateTaaHistory();
+        RefreshWindowCaption();
+    }
     if (f3 && !mPrevF3)
     {
         mScene.ToggleFrustumCulling();
@@ -178,9 +208,14 @@ void MainApp::Update(const GameTimer& gt)
     mPrevF10 = f10;
     mPrevR = r;
     mPrevT = t;
+    mPrevF2 = f2;
+    mPrevM = m;
+    mPrevH = h;
+    mPrevG = g;
 
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
+    mRendering.ApplyCameraJitter(mCamera);
     mScene.Update(gt, mCamera);
 
     const auto& bulbs = mScene.GetBulbs();
@@ -247,6 +282,16 @@ void MainApp::Draw(const GameTimer& gt)
 
     mRendering.DrawDeferredLighting(mCommandList.Get(), mScreenViewport, mScissorRect);
 
+    if (mRendering.WantsVelocityPass())
+    {
+        mRendering.BeginCameraVelocity(mCommandList.Get(), mCamera, mScreenViewport, mScissorRect);
+        mRendering.BeginObjectVelocity(mCommandList.Get());
+        mScene.DrawMotionVelocity(mCommandList.Get());
+        mRendering.EndVelocityPass(mCommandList.Get());
+    }
+    mRendering.ResolveTaa(mCommandList.Get(), mScreenViewport, mScissorRect);
+    mRendering.RememberCamera(mCamera);
+
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
         CurrentBackBuffer(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
     mCommandList->ResourceBarrier(1, &barrier);
@@ -310,6 +355,9 @@ void MainApp::RefreshWindowCaption()
         L"  F4 octree:" + octree +
         L"  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
         L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +
+        L"  F2 taa:" + std::wstring(mRendering.IsTaaEnabled() ? L"ON" : L"OFF") +
+        L"  H clamp:" + std::wstring(mRendering.IsTaaClampEnabled() ? L"ON" : L"OFF") +
+        L"  M vel:" + std::wstring(mRendering.IsVelocityView() ? L"ON" : L"OFF") +
         L"  R fisheye:" + std::wstring(mRendering.IsFisheyeEnabled() ? L"ON" : L"OFF") +
         L"  tess:" + std::wstring(mRendering.IsTessBaked() ? L"BAKED" : L"LIVE") +
         L"  lod1>" + std::to_wstring((int)Config::BillboardLodDistance) +

@@ -44,6 +44,8 @@ public:
 
     DirectX::XMMATRIX GetView()const;
     DirectX::XMMATRIX GetProj()const;
+    DirectX::XMMATRIX GetUnjitteredProj()const;
+    void SetProjectionJitter(float ndcX, float ndcY);
     DirectX::XMFLOAT4X4 GetView4x4f()const;
     DirectX::XMFLOAT4X4 GetProj4x4f()const;
 
@@ -86,6 +88,8 @@ private:
 
     float mPitch = 0.0f;
     float mYaw = 0.0f;
+    float mJitterX = 0.0f;
+    float mJitterY = 0.0f;
 
     POINT mLastMousePos = { 0, 0 };
 };
