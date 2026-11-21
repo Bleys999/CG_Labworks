@@ -140,9 +140,9 @@ void RenderingSystem::Resize(ID3D12Device* device, UINT width, UINT height)
 
 void RenderingSystem::InitDefaultLights()
 {
-    XMVECTOR sun = XMVector3Normalize(XMVectorSet(0.42f, -0.86f, 0.22f, 0.0f));
+    XMVECTOR sun = XMVector3Normalize(XMVectorSet(0.90f, -0.24f, 0.28f, 0.0f));
     XMStoreFloat4(&mLightingCpu.DirectionalDir, sun);
-    mLightingCpu.DirectionalColor = { 1.0f, 0.96f, 0.88f, 6.5f };
+    mLightingCpu.DirectionalColor = { 1.0f, 0.42f, 0.16f, 4.5f };
     mLightingCpu.AmbientColor = { 0.13f, 0.13f, 0.145f, 1.0f };
 
     mLightingCpu.PointCount = 0;

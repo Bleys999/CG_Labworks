@@ -17,9 +17,9 @@ struct TerrainConstants
     float TerrainSize = 1.0f;
     float TexelWorld = 1.0f;
     float InvTexCount = 1.0f;
-    float LodDebug = 0.0f;
+    float ShowLod = 0.0f;
     DirectX::XMFLOAT3 CameraWorld = { 0.0f, 0.0f, 0.0f };
-    float Pad0 = 0.0f;
+    float ShowMesh = 0.0f;
 };
 
 class TerrainObject : public GameObject
@@ -29,7 +29,6 @@ public:
     virtual ~TerrainObject() = default;
 
     void SetRenderingSystem(RenderingSystem* rendering) { mRendering = rendering; }
-    void SetFlattenRegion(const DirectX::BoundingBox& worldBounds);
 
     virtual bool Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager) override;
     virtual void Update(const GameTimer& gt) override;
@@ -40,8 +39,10 @@ public:
     void SelectNodes(const DirectX::XMFLOAT3& cameraPos, const DirectX::BoundingFrustum& frustum);
     float GetHeightAt(float worldX, float worldZ) const;
 
-    void CycleLodDebug() { mLodDebug = (mLodDebug + 1) % 3; }
-    UINT GetLodDebug() const { return mLodDebug; }
+    void ToggleMesh() { mShowMesh = !mShowMesh; }
+    void ToggleLod() { mShowLod = !mShowLod; }
+    bool IsMeshVisible() const { return mShowMesh; }
+    bool IsLodVisible() const { return mShowLod; }
     void SetCullingEnabled(bool enabled) { mCullingEnabled = enabled; }
     bool IsCullingEnabled() const { return mCullingEnabled; }
     UINT GetDrawnNodeCount() const { return (UINT)mDrawNodes.size(); }
@@ -65,7 +66,6 @@ private:
     };
 
     bool LoadHeightmap();
-    void ApplyFlatten();
     void BuildNodeBounds();
     bool UploadHeightmap(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
     bool BuildGridMesh(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList);
@@ -83,16 +83,13 @@ private:
     UINT mTexCount = 0;
     std::vector<std::vector<DirectX::XMFLOAT2>> mNodeMinMax;
 
-    bool mHasFlatten = false;
-    DirectX::BoundingBox mFlattenBounds = {};
-    float mBaseY = 0.0f;
-
     std::vector<DrawNode> mDrawNodes;
     std::vector<DrawNode> mShadowNodes;
     UINT mCulledNodes = 0;
     UINT mMaxLevelDrawn = 0;
-    UINT mLodDebug = 0;
-    bool mCullingEnabled = true;
+    bool mShowMesh = false;
+    bool mShowLod = false;
+    bool mCullingEnabled = false;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> mHeightTex;
     Microsoft::WRL::ComPtr<ID3D12Resource> mHeightUpload;

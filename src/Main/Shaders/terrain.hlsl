@@ -9,9 +9,9 @@ cbuffer cbTerrain : register(b0)
     float gTerrainSize;
     float gTexelWorld;
     float gInvTexCount;
-    float gLodDebug;
+    float gShowLod;
     float3 gCameraWorld;
-    float gPad0;
+    float gShowMesh;
 };
 
 cbuffer cbShadowPass : register(b1)
@@ -38,6 +38,7 @@ struct VertexOut
     float3 PosW : POSITION;
     float2 UV : TEXCOORD0;
     float Level : TEXCOORD1;
+    float TileEdge : TEXCOORD2;
 };
 
 struct GBufferOut
@@ -70,6 +71,8 @@ VertexOut VS(VertexIn vin)
     o.PosW = posW;
     o.UV = uv;
     o.Level = gNodeLevel;
+    float onBorder = (vin.Grid.x <= 0.0001f || vin.Grid.x >= 0.9999f || vin.Grid.y <= 0.0001f || vin.Grid.y >= 0.9999f) ? 1.0f : 0.0f;
+    o.TileEdge = onBorder * (1.0f - vin.Skirt);
     return o;
 }
 
@@ -141,8 +144,10 @@ GBufferOut PS(VertexOut pin)
 
     float rough = lerp(0.92f, 0.62f, snowW);
 
-    if (gLodDebug > 0.5f)
+    if (gShowLod > 0.5f)
         col = lerp(col, LevelColor(pin.Level), 0.65f);
+    if (gShowMesh > 0.5f && pin.TileEdge > 0.95f)
+        col = float3(0.95f, 0.95f, 0.95f);
 
     o.Albedo = float4(col, rough);
     o.Normal = float4(n * 0.5f + 0.5f, 0.0f);

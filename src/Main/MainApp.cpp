@@ -49,6 +49,7 @@ private:
     bool mPrevF10 = false;
     bool mPrevR = false;
     bool mPrevT = false;
+    bool mPrevY = false;
     bool mPrevF2 = false;
     bool mPrevM = false;
     bool mPrevH = false;
@@ -87,6 +88,7 @@ bool MainApp::Initialize()
     {
         const XMFLOAT3 p = mCamera.GetPosition3f();
         mCamera.SetPosition(p.x, terrain->GetHeightAt(p.x, p.z) + 40.0f, p.z);
+        mRendering.SetShadowCasterBounds(terrain->GetWorldBounds());
     }
 
     ThrowIfFailed(mCommandList->Close());
@@ -121,6 +123,7 @@ void MainApp::Update(const GameTimer& gt)
     const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N');
     const bool r = mInput.IsKeyDown('R');
     const bool t = mInput.IsKeyDown('T');
+    const bool y = mInput.IsKeyDown('Y');
     const bool f2 = mInput.IsKeyDown(VK_F2);
     const bool m = mInput.IsKeyDown('M');
     const bool h = mInput.IsKeyDown('H');
@@ -195,7 +198,13 @@ void MainApp::Update(const GameTimer& gt)
     if (t && !mPrevT)
     {
         if (TerrainObject* terrain = mScene.GetTerrain())
-            terrain->CycleLodDebug();
+            terrain->ToggleMesh();
+        RefreshWindowCaption();
+    }
+    if (y && !mPrevY)
+    {
+        if (TerrainObject* terrain = mScene.GetTerrain())
+            terrain->ToggleLod();
         RefreshWindowCaption();
     }
     mPrevF3 = f3;
@@ -208,6 +217,7 @@ void MainApp::Update(const GameTimer& gt)
     mPrevF10 = f10;
     mPrevR = r;
     mPrevT = t;
+    mPrevY = y;
     mPrevF2 = f2;
     mPrevM = m;
     mPrevH = h;
@@ -342,8 +352,8 @@ void MainApp::RefreshWindowCaption()
     std::wstring terrainInfo;
     if (TerrainObject* terrain = mScene.GetTerrain())
     {
-        const wchar_t* modes[] = { L"off", L"color", L"wire" };
-        terrainInfo = L"  T terrain lod:" + std::wstring(modes[terrain->GetLodDebug() % 3]) +
+        terrainInfo = L"  T grid:" + std::wstring(terrain->IsMeshVisible() ? L"ON" : L"OFF") +
+            L"  Y lod:" + std::wstring(terrain->IsLodVisible() ? L"ON" : L"OFF") +
             L" nodes:" + std::to_wstring(terrain->GetDrawnNodeCount()) +
             L" tris:" + std::to_wstring(terrain->GetDrawnTriangleCount()) +
             L" culled:" + std::to_wstring(terrain->GetCulledNodeCount()) +

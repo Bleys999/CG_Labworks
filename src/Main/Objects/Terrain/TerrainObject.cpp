@@ -70,13 +70,6 @@ namespace
         return {};
     }
 
-    float SmoothStep(float edge0, float edge1, float x)
-    {
-        float t = (x - edge0) / (edge1 - edge0);
-        t = (std::max)(0.0f, (std::min)(1.0f, t));
-        return t * t * (3.0f - 2.0f * t);
-    }
-
     float SkirtDepth(float nodeSize)
     {
         return nodeSize * 0.1f + 5.0f;
@@ -88,17 +81,10 @@ TerrainObject::TerrainObject(const std::string& name) : GameObject(name)
     SetCullable(false);
 }
 
-void TerrainObject::SetFlattenRegion(const BoundingBox& worldBounds)
-{
-    mFlattenBounds = worldBounds;
-    mHasFlatten = true;
-}
-
 bool TerrainObject::Initialize(ID3D12Device* device, ID3D12GraphicsCommandList* cmdList, TextureManager* textureManager)
 {
     if (!LoadHeightmap())
         return false;
-    ApplyFlatten();
     BuildNodeBounds();
     if (!UploadHeightmap(device, cmdList))
         return false;
@@ -186,58 +172,6 @@ float TerrainObject::GetHeightAt(float worldX, float worldZ) const
     const float h11 = SampleHeight(x0 + 1, z0 + 1);
     const float h = (h00 * (1.0f - tx) + h10 * tx) * (1.0f - tz) + (h01 * (1.0f - tx) + h11 * tx) * tz;
     return mPosition.y + h * Config::TerrainHeight;
-}
-
-void TerrainObject::ApplyFlatten()
-{
-    if (!mHasFlatten || mTexCount == 0)
-        return;
-
-    const float size = Config::TerrainSize;
-    const float originX = mPosition.x - 0.5f * size;
-    const float originZ = mPosition.z - 0.5f * size;
-    const float texelWorld = size / (float)(mTexCount - 1);
-    const XMFLOAT3 c = mFlattenBounds.Center;
-    const XMFLOAT3 e = mFlattenBounds.Extents;
-
-    double sum = 0.0;
-    int count = 0;
-    for (UINT z = 0; z < mTexCount; ++z)
-    {
-        const float wz = originZ + z * texelWorld;
-        if (fabsf(wz - c.z) > e.z)
-            continue;
-        for (UINT x = 0; x < mTexCount; ++x)
-        {
-            const float wx = originX + x * texelWorld;
-            if (fabsf(wx - c.x) > e.x)
-                continue;
-            sum += mHeights[(size_t)z * mTexCount + x];
-            ++count;
-        }
-    }
-    if (count == 0)
-        return;
-
-    const float flatH = (float)(sum / count);
-    for (UINT z = 0; z < mTexCount; ++z)
-    {
-        const float wz = originZ + z * texelWorld;
-        const float dz = (std::max)(0.0f, fabsf(wz - c.z) - (e.z + Config::TerrainFlattenMargin));
-        for (UINT x = 0; x < mTexCount; ++x)
-        {
-            const float wx = originX + x * texelWorld;
-            const float dx = (std::max)(0.0f, fabsf(wx - c.x) - (e.x + Config::TerrainFlattenMargin));
-            const float d = sqrtf(dx * dx + dz * dz);
-            const float w = SmoothStep(0.0f, Config::TerrainFlattenFalloff, d);
-            float& hv = mHeights[(size_t)z * mTexCount + x];
-            hv = flatH + (hv - flatH) * w;
-        }
-    }
-
-    const float floorY = c.y - e.y;
-    mPosition.y = floorY - 0.5f - flatH * Config::TerrainHeight;
-    UpdateWorldBounds();
 }
 
 void TerrainObject::BuildNodeBounds()
@@ -467,7 +401,7 @@ bool TerrainObject::BuildPipeline(ID3D12Device* device)
     shadow.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     shadow.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     shadow.RasterizerState.DepthBias = 0;
-    shadow.RasterizerState.SlopeScaledDepthBias = 1.6f;
+    shadow.RasterizerState.SlopeScaledDepthBias = 0.25f;
     shadow.RasterizerState.DepthBiasClamp = 0.0f;
     shadow.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     shadow.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -506,7 +440,7 @@ void TerrainObject::SelectNodes(const XMFLOAT3& cameraPos, const BoundingFrustum
     if (mNodeMinMax.empty())
         return;
     SelectRecursive(0, 0, 0, cameraPos, mCullingEnabled ? &frustum : nullptr, Config::TerrainLodFactor, mDrawNodes);
-    SelectRecursive(0, 0, 0, cameraPos, nullptr, Config::TerrainLodFactor * 0.5f, mShadowNodes);
+    SelectRecursive(0, 0, 0, cameraPos, nullptr, Config::TerrainLodFactor, mShadowNodes);
 }
 
 void TerrainObject::SelectRecursive(UINT level, UINT ix, UINT iz, const XMFLOAT3& cameraPos,
@@ -561,7 +495,8 @@ void TerrainObject::UpdateConstantBuffer(FXMMATRIX view, FXMMATRIX proj)
     tc.TerrainSize = Config::TerrainSize;
     tc.TexelWorld = Config::TerrainSize / (float)(mTexCount - 1);
     tc.InvTexCount = 1.0f / (float)mTexCount;
-    tc.LodDebug = (float)mLodDebug;
+    tc.ShowLod = mShowLod ? 1.0f : 0.0f;
+    tc.ShowMesh = mShowMesh ? 1.0f : 0.0f;
     mTerrainCB->CopyData(0, tc);
 }
 
@@ -583,7 +518,7 @@ void TerrainObject::Draw(ID3D12GraphicsCommandList* cmdList)
         return;
 
     cmdList->SetGraphicsRootSignature(mRootSignature.Get());
-    cmdList->SetPipelineState(mLodDebug == 2 ? mWirePSO.Get() : mPSO.Get());
+    cmdList->SetPipelineState(mShowMesh ? mWirePSO.Get() : mPSO.Get());
     cmdList->SetGraphicsRootConstantBufferView(0, mTerrainCB->Resource()->GetGPUVirtualAddress());
     ID3D12DescriptorHeap* heap = mHeap.Get();
     cmdList->SetDescriptorHeaps(1, &heap);

@@ -61,7 +61,7 @@ private:
     class BoxObject* mMotionBox = nullptr;
     TextureManager* mTextureManager;
     Octree mOctree;
-    bool mFrustumCulling = true;
+    bool mFrustumCulling = false;
     bool mOctreeCulling = false;
     int mCullableCount = 0;
     int mDrawnCount = 0;

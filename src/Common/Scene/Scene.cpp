@@ -58,8 +58,6 @@ bool Scene::SpawnTerrain(ID3D12Device* device, ID3D12GraphicsCommandList* cmdLis
     terrain->SetRenderingSystem(rendering);
     terrain->SetPosition(0.0f, 0.0f, 0.0f);
     terrain->SetCullable(false);
-    if (GameObject* sponza = GetObject("Sponza"))
-        terrain->SetFlattenRegion(sponza->GetWorldBounds());
     if (!terrain->Initialize(device, cmdList, textureManager))
         return false;
     mTerrain = terrain.get();

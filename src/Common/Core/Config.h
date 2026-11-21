@@ -53,8 +53,6 @@ struct Config
     static constexpr UINT TerrainTileQuads = 32;
     static constexpr UINT TerrainMaxDepth = 5;
     static constexpr float TerrainLodFactor = 2.2f;
-    static constexpr float TerrainFlattenMargin = 120.0f;
-    static constexpr float TerrainFlattenFalloff = 700.0f;
 
     static constexpr float FogStart = 120.0f;
     static constexpr float FogEnd = 2200.0f;

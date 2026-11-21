@@ -13,8 +13,8 @@ static constexpr UINT kMaxSpotLights = 4;
 
 struct DeferredLightingConstants
 {
-    DirectX::XMFLOAT4 DirectionalDir = { 0.35f, -0.85f, 0.35f, 0.0f };
-    DirectX::XMFLOAT4 DirectionalColor = { 1.0f, 0.95f, 0.85f, 0.55f };
+    DirectX::XMFLOAT4 DirectionalDir = { 0.90f, -0.24f, 0.28f, 0.0f };
+    DirectX::XMFLOAT4 DirectionalColor = { 1.0f, 0.42f, 0.16f, 4.5f };
     DirectX::XMFLOAT4 AmbientColor = { 0.06f, 0.06f, 0.07f, 1.0f };
     DirectX::XMFLOAT4 CameraWorld = { 0.0f, 0.0f, 0.0f, 0.0f };
     DirectX::XMFLOAT4 CameraLook = { 0.0f, 0.0f, 1.0f, 0.0f };
@@ -220,10 +220,10 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE mSceneRtv{};
     D3D12_RESOURCE_STATES mSceneState = D3D12_RESOURCE_STATE_RENDER_TARGET;
     std::unique_ptr<UploadBuffer<PostProcessConstants>> mPostCB;
-    bool mFogEnabled = true;
-    bool mEdgeEnabled = true;
+    bool mFogEnabled = false;
+    bool mEdgeEnabled = false;
     bool mFisheyeEnabled = false;
-    bool mTaaEnabled = true;
+    bool mTaaEnabled = false;
     bool mTaaClamp = true;
     bool mShowVelocity = false;
     bool mTaaHistoryValid = false;
