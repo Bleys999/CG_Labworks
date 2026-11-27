@@ -54,9 +54,14 @@ struct Config
     static constexpr UINT TerrainMaxDepth = 5;
     static constexpr float TerrainLodFactor = 2.2f;
 
-    static constexpr float FogStart = 120.0f;
-    static constexpr float FogEnd = 2200.0f;
-    static constexpr float FogStrength = 0.82f;
+    static constexpr float AtmBaseRayleighR = 0.85e-3f;
+    static constexpr float AtmBaseRayleighG = 1.95e-3f;
+    static constexpr float AtmBaseRayleighB = 4.75e-3f;
+    static constexpr float AtmBaseMie = 1.05e-3f;
+    static constexpr float AtmMieG = 0.758f;
+    static constexpr float AtmOpticalHeight = 12000.0f;
+    static constexpr float AtmCleanMieScale = 0.35f;
+    static constexpr float AtmDirtyMieScale = 2.85f;
     static constexpr float BloomThreshold = 0.55f;
     static constexpr float BloomIntensity = 0.65f;
     static constexpr float EdgeStrength = 0.9f;

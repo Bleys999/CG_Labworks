@@ -10,6 +10,7 @@
 #include "../Common/Core/Input.h"
 #include "../Common/Assets/TextureManager.h"
 #include "../Common/Core/Config.h"
+#include <cmath>
 #include <string>
 
 using namespace DirectX;
@@ -44,7 +45,6 @@ private:
     bool mPrevF5 = false;
     bool mPrevF6 = false;
     bool mPrevF7 = false;
-    bool mPrevF8 = false;
     bool mPrevF9 = false;
     bool mPrevF10 = false;
     bool mPrevR = false;
@@ -52,8 +52,16 @@ private:
     bool mPrevY = false;
     bool mPrevF2 = false;
     bool mPrevM = false;
+    bool mPrevN = false;
+    bool mPrevL = false;
     bool mPrevH = false;
     bool mPrevG = false;
+    bool mPrevV = false;
+    bool mPrevO = false;
+    bool mPrevU = false;
+    bool mPrevI = false;
+    bool mPrevJ = false;
+    bool mPrevK = false;
 };
 
 MainApp::MainApp(HINSTANCE hInstance) : D3DApp(hInstance) {}
@@ -118,22 +126,32 @@ void MainApp::Update(const GameTimer& gt)
     const bool f5 = mInput.IsKeyDown(VK_F5);
     const bool f6 = mInput.IsKeyDown(VK_F6);
     const bool f7 = mInput.IsKeyDown(VK_F7);
-    const bool f8 = mInput.IsKeyDown(VK_F8);
     const bool f9 = mInput.IsKeyDown(VK_F9);
-    const bool f10 = mInput.IsKeyDown(VK_F10) || mInput.IsKeyDown('N');
+    const bool f10 = mInput.IsKeyDown(VK_F10);
     const bool r = mInput.IsKeyDown('R');
     const bool t = mInput.IsKeyDown('T');
     const bool y = mInput.IsKeyDown('Y');
     const bool f2 = mInput.IsKeyDown(VK_F2);
     const bool m = mInput.IsKeyDown('M');
+    const bool n = mInput.IsKeyDown('N');
+    const bool l = mInput.IsKeyDown('L');
+    const bool v = mInput.IsKeyDown('V');
     const bool h = mInput.IsKeyDown('H');
     const bool g = mInput.IsKeyDown('G');
+    const bool o = mInput.IsKeyDown('O');
+    const bool u = mInput.IsKeyDown('U');
+    const bool i = mInput.IsKeyDown('I');
+    const bool j = mInput.IsKeyDown('J');
+    const bool k = mInput.IsKeyDown('K');
+    const bool k9 = mInput.IsKeyDown('9');
+    const bool k0 = mInput.IsKeyDown('0');
+    const float sunOrbitSpeed = 0.48f;
     if (f2 && !mPrevF2)
     {
         mRendering.ToggleTaa();
         RefreshWindowCaption();
     }
-    if (m && !mPrevM)
+    if (v && !mPrevV)
     {
         mRendering.ToggleVelocityView();
         RefreshWindowCaption();
@@ -175,11 +193,38 @@ void MainApp::Update(const GameTimer& gt)
         mRendering.SetShadowDebugMode(2);
         RefreshWindowCaption();
     }
-    if (f8 && !mPrevF8)
+    if (l && !mPrevL)
     {
         mRendering.ToggleFogEnabled();
         RefreshWindowCaption();
     }
+    if (n && !mPrevN)
+    {
+        mRendering.SetAtmospherePresetClean();
+        RefreshWindowCaption();
+    }
+    if (m && !mPrevM)
+    {
+        mRendering.SetAtmospherePresetDirty();
+        RefreshWindowCaption();
+    }
+    if (o && !mPrevO)
+    {
+        mRendering.ToggleObjectAtmosphere();
+        RefreshWindowCaption();
+    }
+    if (u && !mPrevU)
+        mRendering.AdjustRayleighScale(0.08f);
+    if (i && !mPrevI)
+        mRendering.AdjustRayleighScale(-0.08f);
+    if (j && !mPrevJ)
+        mRendering.AdjustMieScale(0.12f);
+    if (k && !mPrevK)
+        mRendering.AdjustMieScale(-0.12f);
+    if (k9)
+        mRendering.AdjustSunArcAngle(sunOrbitSpeed * gt.DeltaTime());
+    if (k0)
+        mRendering.AdjustSunArcAngle(-sunOrbitSpeed * gt.DeltaTime());
     if (f9 && !mPrevF9)
     {
         mRendering.ToggleEdgeEnabled();
@@ -212,7 +257,6 @@ void MainApp::Update(const GameTimer& gt)
     mPrevF5 = f5;
     mPrevF6 = f6;
     mPrevF7 = f7;
-    mPrevF8 = f8;
     mPrevF9 = f9;
     mPrevF10 = f10;
     mPrevR = r;
@@ -220,8 +264,16 @@ void MainApp::Update(const GameTimer& gt)
     mPrevY = y;
     mPrevF2 = f2;
     mPrevM = m;
+    mPrevN = n;
+    mPrevL = l;
+    mPrevV = v;
     mPrevH = h;
     mPrevG = g;
+    mPrevO = o;
+    mPrevU = u;
+    mPrevI = i;
+    mPrevJ = j;
+    mPrevK = k;
 
     mCamera.HandleInput(gt, mInput);
     mInput.ResetMouseDelta();
@@ -363,11 +415,16 @@ void MainApp::RefreshWindowCaption()
         L"  F5/F6/F7:" + std::wstring(vizName) +
         L"  F10  F3 frustum:" + frustum +
         L"  F4 octree:" + octree +
-        L"  F8 fog:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
+        L"  L atm:" + std::wstring(mRendering.IsFogEnabled() ? L"ON" : L"OFF") +
+        L"  N/M clean/dirty  0/9 orbit" +
+        L" h:" + std::to_wstring((int)(sinf(mRendering.GetSunArcAngle()) * 100.0f)) +
+        L"  O obj:" + std::wstring(mRendering.IsObjectAtmosphereEnabled() ? L"ON" : L"OFF") +
+        L"  U/I Rayleigh:" + std::to_wstring((int)(mRendering.GetRayleighScale() * 100.0f)) +
+        L"  J/K Mie:" + std::to_wstring((int)(mRendering.GetMieScale() * 100.0f)) +
         L"  F9 edges:" + std::wstring(mRendering.IsEdgeEnabled() ? L"ON" : L"OFF") +
         L"  F2 taa:" + std::wstring(mRendering.IsTaaEnabled() ? L"ON" : L"OFF") +
         L"  H clamp:" + std::wstring(mRendering.IsTaaClampEnabled() ? L"ON" : L"OFF") +
-        L"  M vel:" + std::wstring(mRendering.IsVelocityView() ? L"ON" : L"OFF") +
+        L"  V vel:" + std::wstring(mRendering.IsVelocityView() ? L"ON" : L"OFF") +
         L"  R fisheye:" + std::wstring(mRendering.IsFisheyeEnabled() ? L"ON" : L"OFF") +
         L"  tess:" + std::wstring(mRendering.IsTessBaked() ? L"BAKED" : L"LIVE") +
         L"  lod1>" + std::to_wstring((int)Config::BillboardLodDistance) +

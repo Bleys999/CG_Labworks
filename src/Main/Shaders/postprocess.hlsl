@@ -11,21 +11,30 @@ SamplerState gPointClamp : register(s1);
 cbuffer cbPost : register(b0)
 {
     float3 gCameraWorld;
-    float gFogStart;
-    float3 gFogColor;
-    float gFogEnd;
+    float gAtmEnable;
+    float3 gSunDir;
+    float gAtmObject;
+    float3 gBetaR;
+    float gMieG;
+    float3 gBetaM;
+    float gSunIntensity;
+    float3 gSunColor;
+    float gAtmOpticalHeight;
     float gBloomThreshold;
     float gBloomIntensity;
     float2 gInvScreenSize;
-    float gFogStrength;
-    float gPostEnable;
     float gEdgeStrength;
     float gFisheye;
     float gShowVelocity;
     float gVelocityScale;
-    float2 gPostPad;
+    float gPostPad0;
+    float gPostPad1;
+    float gPostPad2;
+    float gPostPad3;
     float4x4 gInvViewProj;
 };
+
+static const float PI = 3.14159265;
 
 float2 FisheyeUV(float2 uv, out bool inside)
 {
@@ -51,22 +60,87 @@ float2 FisheyeUV(float2 uv, out bool inside)
     return p * 0.5f + 0.5f;
 }
 
-float3 ApplyFog(float3 color, float depth, float3 worldPos, float3 albedo, float3 normalEnc)
+float RayleighPhase(float cosTheta)
 {
-    if (gFogStrength <= 0.0f)
+    return (3.0f / (16.0f * PI)) * (1.0f + cosTheta * cosTheta);
+}
+
+float MiePhase(float cosTheta, float g)
+{
+    float g2 = g * g;
+    float denom = max(1.0f + g2 - 2.0f * g * cosTheta, 1e-3f);
+    return (3.0f / (8.0f * PI)) * ((1.0f - g2) * (1.0f + cosTheta * cosTheta))
+        / ((2.0f + g2) * pow(denom, 1.5f));
+}
+
+float3 OpticalDepthAlong(float3 dir, float3 betaE)
+{
+    float path = gAtmOpticalHeight / max(abs(dir.y), 0.05f);
+    return betaE * path;
+}
+
+float3 SkyScattering(float3 viewDir, float3 sunDir)
+{
+    float3 betaE = gBetaR + gBetaM;
+    float cosTheta = dot(viewDir, sunDir);
+
+    float3 odView = OpticalDepthAlong(viewDir, betaE);
+    float3 odSun = OpticalDepthAlong(sunDir, betaE);
+    float3 tau = odView + odSun;
+
+    float3 transmit = exp(-tau);
+    float3 sunlight = gSunColor * gSunIntensity;
+
+    float pr = RayleighPhase(cosTheta);
+    float pm = MiePhase(cosTheta, gMieG);
+    float3 scatterCoeff = gBetaR * pr + gBetaM * pm;
+    float3 inscatter = sunlight * scatterCoeff * (1.0f - exp(-odView));
+
+    float3 zenith = float3(0.12f, 0.22f, 0.45f) * (0.25f + 0.75f * saturate(viewDir.y));
+    float3 sky = zenith + inscatter + sunlight * transmit * 0.02f;
+
+    if (sunDir.y > 0.02f)
+    {
+        float sunAlign = saturate(dot(viewDir, sunDir));
+        float sunCore = pow(sunAlign, 4096.0f);
+        float sunHalo = pow(sunAlign, 128.0f);
+        float3 sunTint = lerp(float3(1.0f, 0.92f, 0.78f), gSunColor, 0.65f);
+        sky += sunTint * (sunCore * sunlight * 2.5f + sunHalo * sunlight * 0.18f);
+    }
+
+    return sky;
+}
+
+float3 ObjectAtmosphere(float3 color, float dist, float3 viewDir, float3 sunDir)
+{
+    float3 betaE = gBetaR + gBetaM;
+    float3 od = betaE * dist;
+    float3 transmit = exp(-od);
+
+    float cosTheta = dot(viewDir, sunDir);
+    float3 sunlight = gSunColor * gSunIntensity;
+    float pr = RayleighPhase(cosTheta);
+    float pm = MiePhase(cosTheta, gMieG);
+    float3 haze = sunlight * (gBetaR * pr + gBetaM * pm) * gAtmOpticalHeight * 0.00012f;
+    float3 horizon = float3(0.55f, 0.62f, 0.72f) * haze;
+
+  return color * transmit + horizon * (1.0f - transmit);
+}
+
+float3 ApplyAtmosphere(float3 color, float depth, float3 worldPos, float3 sunDir)
+{
+    if (gAtmEnable <= 0.0f)
         return color;
 
-    float3 n = normalize(normalEnc * 2.0f - 1.0f);
-    float3 fogCol = lerp(gFogColor, gFogColor * saturate(albedo + 0.35f), 0.18f);
+    float3 viewDir = normalize(worldPos - gCameraWorld);
+    if (depth >= 0.99999f)
+        return SkyScattering(viewDir, sunDir);
 
-    if (depth >= 1.0f)
-        return lerp(color, fogCol, saturate(gFogStrength));
+    if (gAtmObject <= 0.0f)
+        return color;
 
     float dist = length(worldPos - gCameraWorld);
-    float t = saturate((dist - gFogStart) / max(gFogEnd - gFogStart, 1.0f));
-    t = t * t * (3.0f - 2.0f * t);
-    t *= lerp(1.0f, 1.12f, saturate(-n.y));
-    return lerp(color, fogCol, t * gFogStrength);
+    return ObjectAtmosphere(color, dist, viewDir, sunDir);
 }
 
 float3 ToneMap(float3 x)
@@ -139,12 +213,11 @@ float4 PS(FSOut pin) : SV_Target
         return float4(0.0f, 0.0f, 0.0f, 1.0f);
 
     float3 color = gScene.Sample(gLinearClamp, uv).rgb;
-    float3 albedo = gAlbedo.Sample(gPointClamp, uv).rgb;
-    float3 normalEnc = gNormal.Sample(gPointClamp, uv).xyz;
     float depth = gDepth.Sample(gPointClamp, uv).r;
     float3 worldPos = ReconstructWorld(uv, depth, gInvViewProj);
+    float3 sunDir = normalize(gSunDir);
 
-    color = ApplyFog(color, depth, worldPos, albedo, normalEnc);
+    color = ApplyAtmosphere(color, depth, worldPos, sunDir);
     color = ApplyEdges(color, uv);
 
     return float4(saturate(ToneMap(color)), 1.0f);

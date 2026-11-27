@@ -39,22 +39,28 @@ struct DeferredLightingConstants
 struct PostProcessConstants
 {
     DirectX::XMFLOAT3 CameraWorld = { 0.0f, 0.0f, 0.0f };
-    float FogStart = 120.0f;
-    DirectX::XMFLOAT3 FogColor = { 0.62f, 0.70f, 0.82f };
-    float FogEnd = 2200.0f;
+    float AtmEnable = 0.0f;
+    DirectX::XMFLOAT3 SunDir = { 0.0f, 1.0f, 0.0f };
+    float AtmObject = 1.0f;
+    DirectX::XMFLOAT3 BetaR = { 0.0f, 0.0f, 0.0f };
+    float MieG = 0.758f;
+    DirectX::XMFLOAT3 BetaM = { 0.0f, 0.0f, 0.0f };
+    float SunIntensity = 1.0f;
+    DirectX::XMFLOAT3 SunColor = { 1.0f, 1.0f, 1.0f };
+    float AtmOpticalHeight = 12000.0f;
     float BloomThreshold = 0.55f;
     float BloomIntensity = 0.65f;
     DirectX::XMFLOAT2 InvScreenSize = { 0.0f, 0.0f };
-    float FogStrength = 0.82f;
-    float PostEnable = 1.0f;
     float EdgeStrength = 0.9f;
     float Fisheye = 0.0f;
     float ShowVelocity = 0.0f;
     float VelocityScale = 32.0f;
     float PostPad0 = 0.0f;
     float PostPad1 = 0.0f;
+    float PostPad2 = 0.0f;
+    float PostPad3 = 0.0f;
     DirectX::XMFLOAT4X4 InvViewProj = MathHelper::Identity4x4();
-    float Pad[28] = {};
+    float Pad[16] = {};
 };
 static_assert(sizeof(PostProcessConstants) == 256, "PostProcessConstants must be 256 bytes");
 
@@ -150,8 +156,19 @@ public:
     void ToggleVelocityView() { mShowVelocity = !mShowVelocity; }
     bool IsVelocityView() const { return mShowVelocity; }
 
-    void ToggleFogEnabled() { mFogEnabled = !mFogEnabled; }
-    bool IsFogEnabled() const { return mFogEnabled; }
+    void ToggleFogEnabled() { mAtmosphereEnabled = !mAtmosphereEnabled; }
+    bool IsFogEnabled() const { return mAtmosphereEnabled; }
+    void ToggleObjectAtmosphere() { mObjectAtmosphereEnabled = !mObjectAtmosphereEnabled; }
+    bool IsObjectAtmosphereEnabled() const { return mObjectAtmosphereEnabled; }
+    void SetAtmospherePresetClean();
+    void SetAtmospherePresetDirty();
+    void AdjustRayleighScale(float delta);
+    void AdjustMieScale(float delta);
+    void AdjustSunArcAngle(float delta);
+    float GetSunArcAngle() const { return mSunArcAngle; }
+    float GetRayleighScale() const { return mRayleighScale; }
+    float GetMieScale() const { return mMieScale; }
+    bool IsDirtyAtmospherePreset() const { return mDirtyAtmospherePreset; }
     void ToggleEdgeEnabled() { mEdgeEnabled = !mEdgeEnabled; }
     bool IsEdgeEnabled() const { return mEdgeEnabled; }
     void ToggleFisheye() { mFisheyeEnabled = !mFisheyeEnabled; }
@@ -170,6 +187,8 @@ private:
     void CreateTaaTargets(ID3D12Device* device, UINT width, UINT height);
     void FillTaaConstants(const Camera& camera);
     void UpdateTaaSrvs(ID3D12Device* device);
+    void FillAtmosphereConstants(PostProcessConstants& pc) const;
+    void ApplySunFromArcAngle();
     void InitDefaultLights();
     void CreateShadowMaps(ID3D12Device* device);
     void UpdateLightingSrvs(ID3D12Device* device);
@@ -220,7 +239,12 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE mSceneRtv{};
     D3D12_RESOURCE_STATES mSceneState = D3D12_RESOURCE_STATE_RENDER_TARGET;
     std::unique_ptr<UploadBuffer<PostProcessConstants>> mPostCB;
-    bool mFogEnabled = false;
+    bool mAtmosphereEnabled = true;
+    bool mObjectAtmosphereEnabled = true;
+    bool mDirtyAtmospherePreset = false;
+    float mRayleighScale = 1.0f;
+    float mMieScale = 0.35f;
+    float mSunArcAngle = 0.22f;
     bool mEdgeEnabled = false;
     bool mFisheyeEnabled = false;
     bool mTaaEnabled = false;

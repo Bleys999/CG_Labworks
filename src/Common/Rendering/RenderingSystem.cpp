@@ -140,11 +140,8 @@ void RenderingSystem::Resize(ID3D12Device* device, UINT width, UINT height)
 
 void RenderingSystem::InitDefaultLights()
 {
-    XMVECTOR sun = XMVector3Normalize(XMVectorSet(0.90f, -0.24f, 0.28f, 0.0f));
-    XMStoreFloat4(&mLightingCpu.DirectionalDir, sun);
-    mLightingCpu.DirectionalColor = { 1.0f, 0.42f, 0.16f, 4.5f };
-    mLightingCpu.AmbientColor = { 0.13f, 0.13f, 0.145f, 1.0f };
-
+    mSunArcAngle = 0.22f;
+    ApplySunFromArcAngle();
     mLightingCpu.PointCount = 0;
     mLightingCpu.SpotCount = 0;
 }
@@ -341,16 +338,12 @@ void RenderingSystem::DrawPostProcess(
 
     PostProcessConstants pc{};
     pc.CameraWorld = XMFLOAT3(mLightingCpu.CameraWorld.x, mLightingCpu.CameraWorld.y, mLightingCpu.CameraWorld.z);
-    pc.FogStart = Config::FogStart;
-    pc.FogColor = XMFLOAT3(0.62f, 0.70f, 0.82f);
-    pc.FogEnd = Config::FogEnd;
+    FillAtmosphereConstants(pc);
     pc.BloomThreshold = Config::BloomThreshold;
     pc.BloomIntensity = Config::BloomIntensity;
     pc.InvScreenSize = XMFLOAT2(
         mSceneWidth > 0 ? 1.0f / (float)mSceneWidth : 0.0f,
         mSceneHeight > 0 ? 1.0f / (float)mSceneHeight : 0.0f);
-    pc.FogStrength = mFogEnabled ? Config::FogStrength : 0.0f;
-    pc.PostEnable = 1.0f;
     pc.EdgeStrength = mEdgeEnabled ? Config::EdgeStrength : 0.0f;
     pc.Fisheye = mFisheyeEnabled ? 1.0f : 0.0f;
     pc.ShowVelocity = mShowVelocity ? 1.0f : 0.0f;
@@ -1210,6 +1203,124 @@ void RenderingSystem::ToggleTaa()
 {
     mTaaEnabled = !mTaaEnabled;
     InvalidateTaaHistory();
+}
+
+void RenderingSystem::FillAtmosphereConstants(PostProcessConstants& pc) const
+{
+    pc.AtmEnable = mAtmosphereEnabled ? 1.0f : 0.0f;
+    pc.AtmObject = mObjectAtmosphereEnabled ? 1.0f : 0.0f;
+    pc.MieG = Config::AtmMieG;
+    pc.AtmOpticalHeight = Config::AtmOpticalHeight;
+
+    XMVECTOR lightDir = XMLoadFloat4(&mLightingCpu.DirectionalDir);
+    XMVECTOR sun = XMVector3Normalize(XMVectorNegate(lightDir));
+    XMStoreFloat3(&pc.SunDir, sun);
+
+    const float rs = mRayleighScale;
+    const float ms = mMieScale;
+    pc.BetaR = XMFLOAT3(
+        Config::AtmBaseRayleighR * rs,
+        Config::AtmBaseRayleighG * rs,
+        Config::AtmBaseRayleighB * rs);
+    const float bm = Config::AtmBaseMie * ms;
+    pc.BetaM = XMFLOAT3(bm, bm, bm);
+
+    pc.SunColor = XMFLOAT3(
+        mLightingCpu.DirectionalColor.x,
+        mLightingCpu.DirectionalColor.y,
+        mLightingCpu.DirectionalColor.z);
+    pc.SunIntensity = mLightingCpu.DirectionalColor.w;
+}
+
+void RenderingSystem::SetAtmospherePresetClean()
+{
+    mDirtyAtmospherePreset = false;
+    mRayleighScale = 1.0f;
+    mMieScale = Config::AtmCleanMieScale;
+}
+
+void RenderingSystem::SetAtmospherePresetDirty()
+{
+    mDirtyAtmospherePreset = true;
+    mRayleighScale = 1.0f;
+    mMieScale = Config::AtmDirtyMieScale;
+}
+
+void RenderingSystem::AdjustRayleighScale(float delta)
+{
+    mRayleighScale = (std::max)(0.15f, (std::min)(4.0f, mRayleighScale + delta));
+}
+
+void RenderingSystem::AdjustMieScale(float delta)
+{
+    mMieScale = (std::max)(0.05f, (std::min)(8.0f, mMieScale + delta));
+}
+
+void RenderingSystem::ApplySunFromArcAngle()
+{
+    const float el = mSunArcAngle;
+    const float c = cosf(el);
+    const float s = sinf(el);
+    XMVECTOR dir = XMVector3Normalize(XMVectorSet(c * 0.88f, -s, c * 0.28f, 0.0f));
+    XMStoreFloat3(reinterpret_cast<XMFLOAT3*>(&mLightingCpu.DirectionalDir), dir);
+    mLightingCpu.DirectionalDir.w = 0.0f;
+
+    const float up = s;
+    const float dayAmt = (std::max)(0.0f, (std::min)(1.0f, up * 5.5f));
+    const float twiAmt = (std::max)(0.0f, 1.0f - (std::min)(1.0f, fabsf(up) * 4.8f)) * (1.0f - dayAmt * 0.82f);
+
+    float intensity = 0.0f;
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+    if (up < -0.05f)
+    {
+        intensity = 0.032f;
+        r = 0.13f;
+        g = 0.17f;
+        b = 0.30f;
+    }
+    else if (up < 0.17f)
+    {
+        const float t = up / 0.17f;
+        intensity = 0.06f + t * 3.0f + twiAmt * 1.8f;
+        r = 0.32f + t * 0.68f;
+        g = 0.34f + t * 0.18f;
+        b = 0.50f - t * 0.32f;
+    }
+    else if (up < 0.58f)
+    {
+        const float t = (up - 0.17f) / 0.41f;
+        intensity = 3.2f + t * 4.2f;
+        r = 1.0f;
+        g = 0.72f + t * 0.24f;
+        b = 0.22f + t * 0.68f;
+    }
+    else
+    {
+        const float t = (std::min)(1.0f, (up - 0.58f) / 0.42f);
+        intensity = 7.0f + t * 1.2f;
+        r = 1.0f;
+        g = 0.97f;
+        b = 0.92f;
+    }
+
+    mLightingCpu.DirectionalColor = { r, g, b, intensity };
+
+    float amb = up < -0.05f ? 0.025f : 0.035f + dayAmt * 0.12f + twiAmt * 0.07f;
+    const float ambB = amb * (up < 0.0f ? 1.38f : 1.1f);
+    mLightingCpu.AmbientColor = { amb, amb, ambB, 1.0f };
+}
+
+void RenderingSystem::AdjustSunArcAngle(float delta)
+{
+    mSunArcAngle += delta;
+    const float twoPi = 6.283185307f;
+    if (mSunArcAngle >= twoPi)
+        mSunArcAngle -= twoPi;
+    else if (mSunArcAngle < 0.0f)
+        mSunArcAngle += twoPi;
+    ApplySunFromArcAngle();
 }
 
 void RenderingSystem::InvalidateTaaHistory()
